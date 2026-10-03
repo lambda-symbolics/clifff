@@ -98,7 +98,7 @@
   (page-index :uint32)
   (page-size :uint32))
 
-(defcfun ("fff_live_grep" fff--live-grep) :pointer
+(defcfun ("fff_live_grep_ex" fff--live-grep) :pointer
   (handle :pointer)
   (query :pointer)
   (mode :uint8)
@@ -108,11 +108,12 @@
   (file-offset :uint32)
   (page-limit :uint32)
   (time-budget-milliseconds :uint64)
+  (enforce-time-budget :uint8)
   (before-context :uint32)
   (after-context :uint32)
   (classify-definitions :uint8))
 
-(defcfun ("fff_multi_grep" fff--multi-grep) :pointer
+(defcfun ("fff_multi_grep_ex" fff--multi-grep) :pointer
   (handle :pointer)
   (patterns :pointer)
   (constraints :pointer)
@@ -122,6 +123,7 @@
   (file-offset :uint32)
   (page-limit :uint32)
   (time-budget-milliseconds :uint64)
+  (enforce-time-budget :uint8)
   (before-context :uint32)
   (after-context :uint32)
   (classify-definitions :uint8))

@@ -347,7 +347,10 @@
      &key (mode ':plain) (file-offset 0) (maximum-results 20)
        (maximum-matches-per-file 20) (time-budget-milliseconds 3000)
        (context-lines 0) (maximum-file-size (* 10 1024 1024)))
-  "Search ENGINE contents for QUERY and return one readable result page."
+  "Search ENGINE contents for QUERY and return one readable result page.
+
+TIME-BUDGET-MILLISECONDS bounds every search, including one that finds nothing;
+the page's :NEXT-FILE-OFFSET then resumes at the first unsearched file."
   (unless (stringp query)
     (clifff--fail ':arguments "QUERY must be a string."))
   (engine--bounded-unsigned file-offset "FILE-OFFSET" #xffffffff)
@@ -381,6 +384,7 @@
                                  file-offset
                                  maximum-results
                                  time-budget-milliseconds
+                                 1
                                  context-lines
                                  context-lines
                                  1))
@@ -396,7 +400,9 @@
      &key (constraints "") (file-offset 0) (maximum-results 20)
        (maximum-matches-per-file 20) (time-budget-milliseconds 3000)
        (context-lines 0) (maximum-file-size (* 10 1024 1024)))
-  "Search ENGINE for lines matching any literal PATTERNS under CONSTRAINTS."
+  "Search ENGINE for lines matching any literal PATTERNS under CONSTRAINTS.
+
+The time budget is enforced as in ENGINE-SEARCH-CONTENT."
   (unless (and (listp patterns)
                patterns
                (every (lambda (pattern)
@@ -437,6 +443,7 @@
                                     file-offset
                                     maximum-results
                                     time-budget-milliseconds
+                                    1
                                     context-lines
                                     context-lines
                                     1))
