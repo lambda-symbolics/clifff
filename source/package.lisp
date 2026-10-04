@@ -29,6 +29,13 @@
            #:engine-search-files
            #:engine-search-multi-content
            #:make-engine
+           #:*fff-library-manifest-version*
+           #:fff-library-current-p
+           #:fff-library-file-name
+           #:fff-library-locate
+           #:fff-library-manifest
+           #:fff-library-manifest-pathname
+           #:fff-library-write-manifest
            #:render-content-result
            #:render-file-result
            #:worker
@@ -50,6 +57,10 @@
                 #:engine-search-files
                 #:engine-search-multi-content
                 #:make-engine
+                #:fff-library-current-p
+                #:fff-library-file-name
+                #:fff-library-locate
+                #:fff-library-write-manifest
                 #:render-content-result
                 #:render-file-result)
   (:export #:run-tests))

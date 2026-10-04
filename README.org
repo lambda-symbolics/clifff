@@ -40,6 +40,15 @@ Always close an engine when it is no longer needed:
 (clifff:engine-close *engine*)
 #+END_SRC
 
+* Pinned library location
+
+A host that builds fff's C library from a pinned commit records the commit with
+=FFF-LIBRARY-WRITE-MANIFEST= beside the library. =FFF-LIBRARY-LOCATE= then
+returns the library in an install directory only when its manifest records the
+expected commit, signaling =CLIFFF-ERROR= otherwise; an =:override= library,
+such as one from a package manager, is trusted as given.
+=FFF-LIBRARY-FILE-NAME= is the platform's library file name.
+
 * Supervised worker
 
 =make-worker= accepts a command that loads =clifff= and calls =worker-main=.
@@ -50,6 +59,10 @@ native failures. It is not a security sandbox.
 The request supplies its workspace, cache, fff library and diagnostic log
 paths. Changing the log destination restarts the helper so distinct application
 configurations do not share diagnostics accidentally.
+
+=worker-file-count= asks the helper how many indexed files match a glob, so a
+host can check that a path filter names existing files before searching under
+it.
 
 * Tests
 

@@ -78,6 +78,32 @@
      "several content matches are counted in plural"))
   nil)
 
+(defun tests--library-location ()
+  "Exercise locating a pinned library through its manifest."
+  (let* ((directory (uiop:ensure-directory-pathname
+                     (merge-pathnames (format nil "clifff-library-~D/" (random most-positive-fixnum))
+                                      (uiop:temporary-directory))))
+         (library (merge-pathnames (fff-library-file-name) directory)))
+    (unwind-protect
+         (progn
+           (test-assert (signals clifff-error (fff-library-locate directory "abc"))
+                        "a missing library is refused")
+           (tests--write-file library "binary")
+           (test-assert (and (not (fff-library-current-p library "abc"))
+                             (signals clifff-error (fff-library-locate directory "abc")))
+                        "a library without a manifest is not current")
+           (fff-library-write-manifest library "abc")
+           (test-assert (and (fff-library-current-p library "abc")
+                             (equal (fff-library-locate directory "abc") (truename library)))
+                        "a library whose manifest records the commit is located")
+           (test-assert (signals clifff-error (fff-library-locate directory "def"))
+                        "a library built from another commit is refused")
+           (test-assert (equal (fff-library-locate directory "def" :override library)
+                               (truename library))
+                        "an override library is trusted without a manifest"))
+      (uiop:delete-directory-tree directory :validate t :if-does-not-exist :ignore)))
+  nil)
+
 (defun tests--native-tests (library)
   "Exercise native search operations through LIBRARY."
   (let ((root
@@ -147,6 +173,7 @@
   "Run clifff tests, including native integration when configured."
   (setf *test-count* 0)
   (tests--unit-tests)
+  (tests--library-location)
   (let ((library (uiop:getenv "CLIFFF_LIBRARY")))
     (when (and library (plusp (length library)))
       (tests--native-tests (pathname library))))

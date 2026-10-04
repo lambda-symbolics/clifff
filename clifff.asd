@@ -10,6 +10,7 @@
                 :serial t
                 :components ((:file "package")
                              (:file "ffi")
+                             (:file "library")
                              (:file "engine")
                              (:file "worker"))))
   :in-order-to ((asdf:test-op (asdf:test-op #:clifff/tests))))
