@@ -67,8 +67,15 @@
      (and (search "src/example.lisp:2:1" rendered)
           (search "before" rendered)
           (search "needle" rendered)
-          (search "after" rendered))
-     "content results render location and context"))
+          (search "after" rendered)
+          (search "1 match;" rendered))
+     "content results render location and context")
+    (test-assert
+     (search "3 matches;"
+             (render-content-result
+              (list :kind ':content :matches nil :count 3 :searched 1 :eligible 1
+                    :total-files 1 :next-file-offset 0 :regex-fallback-error nil)))
+     "several content matches are counted in plural"))
   nil)
 
 (defun tests--native-tests (library)

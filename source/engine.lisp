@@ -277,7 +277,7 @@
 (defun render-content-result (result)
   "Render one copied content RESULT as compact text."
   (with-output-to-string (stream)
-    (format stream "~:D match~:P; searched ~:D of ~:D eligible files, ~:D indexed.~%"
+    (format stream "~:D match~:*~[es~;~:;es~]; searched ~:D of ~:D eligible files, ~:D indexed.~%"
             (getf result :count)
             (getf result :searched)
             (getf result :eligible)
