@@ -37,6 +37,7 @@
            #:worker-main
            #:worker-process
            #:worker-request
+           #:worker-file-count
            #:make-worker))
 
 (defpackage #:clifff/tests

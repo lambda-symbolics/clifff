@@ -305,6 +305,22 @@
                         :cause cause))))))))
 
 
+(defun worker-file-count
+    (worker glob &key library-path base-path cache-directory log-pathname)
+  "Return how many indexed files under BASE-PATH match GLOB, through WORKER.
+
+The other arguments are those of WORKER-REQUEST. Hosts use the count to check
+that a path filter names existing files before searching under it."
+  (parse-integer
+   (worker-request worker
+                   :library-path library-path
+                   :base-path base-path
+                   :cache-directory cache-directory
+                   :log-pathname log-pathname
+                   :operation ':file-count
+                   :arguments (list glob))))
+
+
 ;;;; -- Child-Side Dispatch --
 
 (defun worker--request-p (request)
@@ -346,6 +362,10 @@
       (:multi-content
        (render-content-result
         (apply #'engine-search-multi-content engine arguments)))
+      (:file-count
+       (princ-to-string
+        (getf (engine-search-files engine (first arguments) :glob-p t :page-size 1)
+              :total-matched)))
       (otherwise
        (error "Unknown clifff worker operation ~S."
               (getf (rest request) :operation))))))

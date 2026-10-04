@@ -126,7 +126,16 @@
               (and (= (getf content :count) 1)
                    (string= (getf (first (getf content :matches)) :path)
                             "src/example.lisp"))
-              "native multi-search applies file constraints")))
+              "native multi-search applies file constraints"))
+           (flet ((file-count (glob)
+                    (clifff::worker--dispatch
+                     engine (list :clifff-request :operation :file-count
+                                                  :arguments (list glob)))))
+             (test-assert
+              (and (string= (file-count "**/src/example.lisp") "1")
+                   (string= (file-count "**/missing/example.lisp") "0")
+                   (string= (file-count "**/{src,docs}/*") "2"))
+              "the worker counts the indexed files a glob matches")))
       (when engine
         (engine-close engine))
       (uiop:delete-directory-tree root
