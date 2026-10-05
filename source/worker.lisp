@@ -242,11 +242,19 @@
           (values nil (getf (rest response) :content))))))
 
 (defun worker--reset-databases (cache-directory)
-  "Discard the rebuildable fff ranking and history databases."
+  "Discard rebuildable databases while preserving native lockfile identity.
+
+On BSD, LMDB identifies its System V semaphore set through the lockfile's
+inode. After helper death, the next exclusive open reinitializes that set;
+deleting the lockfile first would strand it until system restart."
   (dolist (name '("frecency/" "history/"))
-    (uiop:delete-directory-tree (merge-pathnames name cache-directory)
-                                :validate t
-                                :if-does-not-exist :ignore))
+    (let ((directory (merge-pathnames name cache-directory)))
+      (when (probe-file directory)
+        (dolist (file (uiop:directory-files directory))
+          (unless (string= (file-namestring file) "lock.mdb")
+            (delete-file file)))
+        (dolist (child (uiop:subdirectories directory))
+          (uiop:delete-directory-tree child :validate t)))))
   nil)
 
 (defun worker-request
