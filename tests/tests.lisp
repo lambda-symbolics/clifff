@@ -104,6 +104,42 @@
       (uiop:delete-directory-tree directory :validate t :if-does-not-exist :ignore)))
   nil)
 
+(defun tests--database-reset-tests ()
+  "Verify cache recovery preserves lockfiles and discards rebuildable state."
+  (let ((root (uiop:ensure-directory-pathname
+               (merge-pathnames
+                (format nil "clifff-reset-tests-~D-~D/"
+                        (get-universal-time) (random most-positive-fixnum))
+                (uiop:temporary-directory)))))
+    (unwind-protect
+         (progn
+           (clifff::worker--reset-databases root)
+           (test-assert (not (probe-file root))
+                        "resetting absent databases does not create a cache")
+           (dolist (name '("frecency/" "history/"))
+             (let ((directory (merge-pathnames name root)))
+               (tests--write-file (merge-pathnames "lock.mdb" directory) "lock identity")
+               (tests--write-file (merge-pathnames "data.mdb" directory) "dead data")
+               (tests--write-file (merge-pathnames "sentinel" directory) "dead marker")
+               (tests--write-file (merge-pathnames "nested/payload" directory) "dead payload")))
+           (clifff::worker--reset-databases root)
+           (dolist (name '("frecency/" "history/"))
+             (let ((directory (merge-pathnames name root)))
+               (test-assert
+                (string= (uiop:read-file-string (merge-pathnames "lock.mdb" directory))
+                         "lock identity")
+                "reset preserves the native lockfile contents")
+               (test-assert
+                (and (not (probe-file (merge-pathnames "data.mdb" directory)))
+                     (not (probe-file (merge-pathnames "sentinel" directory)))
+                     (not (probe-file (merge-pathnames "nested/" directory))))
+                "reset discards database payload, markers and nested cache state")))
+           (clifff::worker--reset-databases root)
+           (test-assert (probe-file (merge-pathnames "history/lock.mdb" root))
+                        "reset is repeatable before the replacement helper opens"))
+      (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore)))
+  nil)
+
 (defun tests--native-tests (library)
   "Exercise native search operations through LIBRARY."
   (let ((root
@@ -174,6 +210,7 @@
   (setf *test-count* 0)
   (tests--unit-tests)
   (tests--library-location)
+  (tests--database-reset-tests)
   (let ((library (uiop:getenv "CLIFFF_LIBRARY")))
     (when (and library (plusp (length library)))
       (tests--native-tests (pathname library))))
