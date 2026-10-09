@@ -214,14 +214,33 @@
         :definition-p (not (zerop (fff--grep-match-definition-p match)))
         :binary-p (not (zerop (fff--grep-match-binary-p match)))))
 
-(defun engine--grep-result (result)
-  "Copy foreign content RESULT into readable Common Lisp data."
-  (let ((count (fff--grep-result-count result)))
+(defun engine--probe-limit (maximum-matches-per-file)
+  "Return the per-file match count asked of fff to detect files over MAXIMUM-MATCHES-PER-FILE."
+  (min (1+ maximum-matches-per-file) #xffffffff))
+
+(defun engine--grep-result (result maximum-matches-per-file)
+  "Copy foreign content RESULT into readable Common Lisp data.
+
+RESULT was searched for one match more than MAXIMUM-MATCHES-PER-FILE, so a file
+holding that extra match keeps only the limit and is listed in
+:TRUNCATED-PATHS."
+  (let ((per-file (make-hash-table :test 'equal))
+        (matches nil)
+        (truncated-paths nil))
+    (dotimes (index (fff--grep-result-count result))
+      (let* ((match (engine--grep-match (fff--grep-result-match result index)))
+             (path (getf match :path)))
+        (if (< (gethash path per-file 0) maximum-matches-per-file)
+            (progn
+              (incf (gethash path per-file 0))
+              (push match matches))
+            (pushnew path truncated-paths :test #'string=))))
+    (setf matches (nreverse matches))
     (list :kind ':content
-          :matches (loop for index below count
-                         collect (engine--grep-match
-                                  (fff--grep-result-match result index)))
-          :count count
+          :matches matches
+          :count (length matches)
+          :maximum-matches-per-file maximum-matches-per-file
+          :truncated-paths (nreverse truncated-paths)
           :searched (fff--grep-result-total-files-searched result)
           :eligible (fff--grep-result-filtered-file-count result)
           :total-files (fff--grep-result-total-files result)
@@ -296,6 +315,10 @@
                                   :definition-p (getf match :definition-p)
                                   :fuzzy-score (getf match :fuzzy-score)))
       (clifff--render-context-lines stream match))
+    (when (getf result :truncated-paths)
+      (format stream "per-file limit of ~D matches reached in: ~{~A~^, ~}~%"
+              (getf result :maximum-matches-per-file)
+              (getf result :truncated-paths)))
     (when (plusp (getf result :next-file-offset))
       (format stream "next-file-offset: ~D~%"
               (getf result :next-file-offset)))))
@@ -350,7 +373,9 @@
   "Search ENGINE contents for QUERY and return one readable result page.
 
 TIME-BUDGET-MILLISECONDS bounds every search, including one that finds nothing;
-the page's :NEXT-FILE-OFFSET then resumes at the first unsearched file."
+the page's :NEXT-FILE-OFFSET then resumes at the first unsearched file. A file
+with more than MAXIMUM-MATCHES-PER-FILE matches keeps the first ones and is
+listed in the page's :TRUNCATED-PATHS."
   (unless (stringp query)
     (clifff--fail ':arguments "QUERY must be a string."))
   (engine--bounded-unsigned file-offset "FILE-OFFSET" #xffffffff)
@@ -379,7 +404,7 @@ the page's :NEXT-FILE-OFFSET then resumes at the first unsearched file."
                                       ':arguments
                                       "MODE must be :PLAIN, :REGEX, or :FUZZY.")))
                                  maximum-file-size
-                                 maximum-matches-per-file
+                                 (engine--probe-limit maximum-matches-per-file)
                                  1
                                  file-offset
                                  maximum-results
@@ -392,7 +417,7 @@ the page's :NEXT-FILE-OFFSET then resumes at the first unsearched file."
                  (clifff--take-handle-result
                   result ':content :pathname (engine-base-path engine))))
           (unwind-protect
-               (engine--grep-result payload)
+               (engine--grep-result payload maximum-matches-per-file)
             (fff--free-grep-result payload)))))))
 
 (defun engine-search-multi-content
@@ -402,7 +427,7 @@ the page's :NEXT-FILE-OFFSET then resumes at the first unsearched file."
        (context-lines 0) (maximum-file-size (* 10 1024 1024)))
   "Search ENGINE for lines matching any literal PATTERNS under CONSTRAINTS.
 
-The time budget is enforced as in ENGINE-SEARCH-CONTENT."
+The time budget and per-file limit apply as in ENGINE-SEARCH-CONTENT."
   (unless (and (listp patterns)
                patterns
                (every (lambda (pattern)
@@ -438,7 +463,7 @@ The time budget is enforced as in ENGINE-SEARCH-CONTENT."
                                     patterns-pointer
                                     constraints-pointer
                                     maximum-file-size
-                                    maximum-matches-per-file
+                                    (engine--probe-limit maximum-matches-per-file)
                                     1
                                     file-offset
                                     maximum-results
@@ -452,5 +477,5 @@ The time budget is enforced as in ENGINE-SEARCH-CONTENT."
                     result ':multi-content
                     :pathname (engine-base-path engine))))
             (unwind-protect
-                 (engine--grep-result payload)
+                 (engine--grep-result payload maximum-matches-per-file)
               (fff--free-grep-result payload))))))))

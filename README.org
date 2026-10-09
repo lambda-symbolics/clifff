@@ -24,7 +24,9 @@ expression and fuzzy content search, and multi-pattern content search.
 The caller supplies the compiled fff C library, version 0.11.0 or newer.
 =clifff= does not install a binary, modify =PATH=, or select a particular fff
 revision. Content searches enforce their time budget even when nothing matches,
-and the page's next file offset resumes at the first unsearched file.
+and the page's next file offset resumes at the first unsearched file. A file
+with more matches than the per-file limit is listed in =:truncated-paths=, and
+the rendered page names it.
 
 Searches return readable property lists. Presentation helpers are provided for
 compact terminal or model output.

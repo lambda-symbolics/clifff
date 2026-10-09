@@ -75,7 +75,15 @@
              (render-content-result
               (list :kind ':content :matches nil :count 3 :searched 1 :eligible 1
                     :total-files 1 :next-file-offset 0 :regex-fallback-error nil)))
-     "several content matches are counted in plural"))
+     "several content matches are counted in plural")
+    (test-assert
+     (search "per-file limit of 2 matches reached in: src/a.lisp, src/b.lisp"
+             (render-content-result
+              (list :kind ':content :matches nil :count 4 :searched 2 :eligible 2
+                    :total-files 2 :next-file-offset 0 :regex-fallback-error nil
+                    :maximum-matches-per-file 2
+                    :truncated-paths '("src/a.lisp" "src/b.lisp"))))
+     "files cut off by the per-file limit are named"))
   nil)
 
 (defun tests--library-location ()
@@ -158,6 +166,9 @@
            (tests--write-file
             (merge-pathnames "docs/example.org" root)
             (format nil "CLIFFF_SECONDARY~%"))
+           (tests--write-file
+            (merge-pathnames "docs/repeated.org" root)
+            (format nil "CLIFFF_REPEATED one~%CLIFFF_REPEATED two~%CLIFFF_REPEATED three~%"))
            (setf engine
                  (make-engine :library-path library
                               :base-path root
@@ -189,6 +200,22 @@
                    (string= (getf (first (getf content :matches)) :path)
                             "src/example.lisp"))
               "native multi-search applies file constraints"))
+           (dolist (search
+                    (list (lambda (limit)
+                            (engine-search-content engine "CLIFFF_REPEATED"
+                                                   :maximum-matches-per-file limit))
+                          (lambda (limit)
+                            (engine-search-multi-content
+                             engine '("CLIFFF_REPEATED")
+                             :maximum-matches-per-file limit))))
+             (let ((cut (funcall search 2))
+                   (whole (funcall search 3)))
+               (test-assert
+                (and (= (getf cut :count) 2)
+                     (equal (getf cut :truncated-paths) '("docs/repeated.org"))
+                     (= (getf whole :count) 3)
+                     (null (getf whole :truncated-paths)))
+                "a file over the per-file limit keeps the limit and is reported")))
            (flet ((file-count (glob)
                     (clifff::worker--dispatch
                      engine (list :clifff-request :operation :file-count
@@ -196,7 +223,7 @@
              (test-assert
               (and (string= (file-count "**/src/example.lisp") "1")
                    (string= (file-count "**/missing/example.lisp") "0")
-                   (string= (file-count "**/{src,docs}/*") "2"))
+                   (string= (file-count "**/{src,docs}/*") "3"))
               "the worker counts the indexed files a glob matches")))
       (when engine
         (engine-close engine))
