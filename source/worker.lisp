@@ -392,8 +392,9 @@ that a path filter names existing files before searching under it."
 
 (defun worker--dispatch (engine request)
   "Execute one validated worker REQUEST with ENGINE."
-  (let ((arguments (getf (rest request) :arguments)))
-    (case (getf (rest request) :operation)
+  (let ((arguments (getf (rest request) :arguments))
+        (operation (getf (rest request) :operation)))
+    (case operation
       (:files
        (render-file-result
         (apply #'engine-search-files engine arguments)))
@@ -408,8 +409,9 @@ that a path filter names existing files before searching under it."
         (getf (engine-search-files engine (first arguments) :glob-p t :page-size 1)
               :total-matched)))
       (otherwise
-       (error "Unknown clifff worker operation ~S."
-              (getf (rest request) :operation))))))
+       (clifff--fail operation
+                     (format nil "Unknown clifff worker operation ~S."
+                             operation))))))
 
 (defun worker--error-text (condition)
   "Return bounded printable text for one worker CONDITION."
@@ -441,7 +443,8 @@ Native helpers run with masked floating-point traps as C and Rust expect."
                       (handler-case
                           (progn
                             (unless (worker--request-p request)
-                              (error "Invalid clifff worker request."))
+                              (clifff--fail ':worker
+                                            "Invalid clifff worker request."))
                             (let ((new-signature
                                     (worker--engine-signature request)))
                               (unless (equal new-signature signature)
