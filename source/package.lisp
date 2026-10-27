@@ -16,7 +16,7 @@
                 #:null-pointer-p
                 #:with-foreign-object
                 #:with-foreign-string)
-  (:export #:+create-options-version+
+  (:export #:*create-options-version*
            #:clifff-error
            #:clifff-error-cause
            #:clifff-error-operation
@@ -50,7 +50,7 @@
 (defpackage #:clifff/tests
   (:use #:cl)
   (:import-from #:clifff
-                #:+create-options-version+
+                #:*create-options-version*
                 #:clifff-error
                 #:engine-close
                 #:engine-search-content

@@ -43,7 +43,7 @@
 
 ;;;; -- fff C ABI --
 
-(defconstant +create-options-version+ 2
+(defparameter *create-options-version* 2
   "The fff create-options ABI version bound by this release.")
 
 (defcstruct fff-result

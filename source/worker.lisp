@@ -2,7 +2,7 @@
 
 ;;;; -- Worker Protocol --
 
-(defconstant +worker-protocol-version+ 1
+(defparameter *worker-protocol-version* 1
   "The private protocol shared by clifff worker processes.")
 
 (defun worker--write-form (stream form)
@@ -32,7 +32,7 @@
   (and (listp value)
        (eq (first value) ':clifff-response)
        (= (or (getf (rest value) :version) 0)
-          +worker-protocol-version+)
+          *worker-protocol-version*)
        (= (or (getf (rest value) :id) 0) request-id)
        (member (getf (rest value) :status) '(:ok :error))
        (stringp (getf (rest value) :content))
@@ -140,7 +140,7 @@
         (ignore-errors
           (worker--write-form
            input
-           (list :clifff-shutdown :version +worker-protocol-version+))))
+           (list :clifff-shutdown :version *worker-protocol-version*))))
       (loop repeat 20
             while (uiop:process-alive-p process)
             do (sleep 0.01))
@@ -192,7 +192,7 @@
                    (worker--start-timeout-seconds worker))))
             (unless (equal handshake
                            (list :clifff-worker
-                                 :version +worker-protocol-version+))
+                                 :version *worker-protocol-version*))
               (error "Invalid clifff helper handshake: ~S" handshake)))
         (error (cause)
           (worker--close-unlocked worker)
@@ -213,7 +213,7 @@
     (request-id library-path base-path cache-directory operation arguments)
   "Return one complete helper request for OPERATION and ARGUMENTS."
   (list :clifff-request
-        :version +worker-protocol-version+
+        :version *worker-protocol-version*
         :id              request-id
         :library-path    (namestring library-path)
         :base-path       (namestring base-path)
@@ -334,7 +334,7 @@ that a path filter names existing files before searching under it."
   "Return true when REQUEST has the complete clifff protocol shape."
   (and (listp request)
        (eq (first request) ':clifff-request)
-       (= (or (getf (rest request) :version) 0) +worker-protocol-version+)
+       (= (or (getf (rest request) :version) 0) *worker-protocol-version*)
        (integerp (getf (rest request) :id))
        (stringp (getf (rest request) :library-path))
        (stringp (getf (rest request) :base-path))
@@ -394,13 +394,13 @@ Native helpers run with masked floating-point traps as C and Rust expect."
          (progn
            (worker--write-form
             protocol-output
-            (list :clifff-worker :version +worker-protocol-version+))
+            (list :clifff-worker :version *worker-protocol-version*))
            (loop for request = (read *standard-input* nil nil)
                  while request
                  do (when (and (listp request)
                                (eq (first request) ':clifff-shutdown)
                                (= (or (getf (rest request) :version) 0)
-                                  +worker-protocol-version+))
+                                  *worker-protocol-version*))
                       (return))
                     (let ((request-id (and (listp request)
                                            (getf (rest request) :id))))
@@ -418,7 +418,7 @@ Native helpers run with masked floating-point traps as C and Rust expect."
                             (worker--write-form
                              protocol-output
                              (list :clifff-response
-                                   :version +worker-protocol-version+
+                                   :version *worker-protocol-version*
                                    :id      request-id
                                    :status  ':ok
                                    :content (worker--dispatch engine request))))
@@ -426,7 +426,7 @@ Native helpers run with masked floating-point traps as C and Rust expect."
                           (worker--write-form
                            protocol-output
                            (list :clifff-response
-                                 :version +worker-protocol-version+
+                                 :version *worker-protocol-version*
                                  :id     request-id
                                  :status ':error
                                  :content

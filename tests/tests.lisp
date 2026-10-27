@@ -13,7 +13,7 @@
 
 (defun tests--unit-tests ()
   "Exercise ABI declarations, validation, and deterministic presentation."
-  (test-assert (= +create-options-version+ 2)
+  (test-assert (= *create-options-version* 2)
                "the binding declares create-options ABI version 2")
   (test-assert (= (cffi:foreign-type-size '(:struct clifff::fff-result)) 32)
                "the result envelope matches the x86-64 C ABI")

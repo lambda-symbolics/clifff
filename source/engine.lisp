@@ -62,7 +62,7 @@
   (dotimes (index (foreign-type-size '(:struct fff-create-options)))
     (setf (mem-aref options :uint8 index) 0))
   (setf (foreign-slot-value options '(:struct fff-create-options) 'version)
-        +create-options-version+
+        *create-options-version*
         (foreign-slot-value options '(:struct fff-create-options) 'base-path)
         base-path
         (foreign-slot-value options
