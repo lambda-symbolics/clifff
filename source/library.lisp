@@ -38,10 +38,10 @@
 
 (defun fff-library-write-manifest (library commit)
   "Atomically record that LIBRARY was built from fff COMMIT."
-  (let* ((manifest (fff-library-manifest-pathname library))
-         (temporary (make-pathname :name (format nil ".manifest-~36R"
-                                                 (random most-positive-fixnum
-                                                         (make-random-state t)))
+  (let* ((manifest  (fff-library-manifest-pathname library))
+         (temporary (make-pathname :name     (format nil ".manifest-~36R"
+                                                     (random most-positive-fixnum
+                                                             (make-random-state t)))
                                    :defaults manifest)))
     (unwind-protect
          (progn

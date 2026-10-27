@@ -4,34 +4,34 @@
 
 (defclass engine ()
   ((handle
-    :initform nil
-    :accessor engine--handle
-    :type t
+    :initform      nil
+    :accessor      engine--handle
+    :type          t
     :documentation "The opaque live fff instance pointer, or NIL.")
    (library-path
-    :initarg :library-path
-    :reader engine--library-path
-    :type pathname
+    :initarg       :library-path
+    :reader        engine--library-path
+    :type          pathname
     :documentation "The fff C library loaded by this process.")
    (base-path
-    :initarg :base-path
-    :reader engine-base-path
-    :type pathname
+    :initarg       :base-path
+    :reader        engine-base-path
+    :type          pathname
     :documentation "The canonical directory indexed by this engine.")
    (cache-directory
-    :initarg :cache-directory
-    :reader engine--cache-directory
-    :type pathname
+    :initarg       :cache-directory
+    :reader        engine--cache-directory
+    :type          pathname
     :documentation "The private directory containing fff databases.")
    (scan-timeout-milliseconds
-    :initarg :scan-timeout-milliseconds
-    :reader engine--scan-timeout-milliseconds
-    :type (integer 1)
+    :initarg       :scan-timeout-milliseconds
+    :reader        engine--scan-timeout-milliseconds
+    :type          (integer 1)
     :documentation "The initial indexing deadline in milliseconds.")
    (lock
-    :initform (make-lock "clifff engine")
-    :reader engine--lock
-    :type t
+    :initform      (make-lock "clifff engine")
+    :reader        engine--lock
+    :type          t
     :documentation "Serialize lifecycle and query calls."))
   (:documentation "One lazily initialized, watched fff workspace index."))
 
@@ -49,11 +49,11 @@
   (unless (typep scan-timeout-milliseconds '(integer 1))
     (clifff--fail ':create "SCAN-TIMEOUT-MILLISECONDS must be positive."))
   (make-instance 'engine
-                 :library-path library-path
-                 :base-path (uiop:ensure-directory-pathname
-                             (truename base-path))
-                 :cache-directory (uiop:ensure-directory-pathname
-                                   cache-directory)
+                 :library-path              library-path
+                 :base-path                 (uiop:ensure-directory-pathname
+                                             (truename base-path))
+                 :cache-directory           (uiop:ensure-directory-pathname
+                                             cache-directory)
                  :scan-timeout-milliseconds scan-timeout-milliseconds))
 
 (defun engine--initialize-create-options
@@ -116,9 +116,9 @@
   (clifff--load-library (engine--library-path engine))
   (unless (engine--handle engine)
     (let* ((cache-directory (engine--cache-directory engine))
-           (frecency-path (merge-pathnames "frecency" cache-directory))
-           (history-path (merge-pathnames "history" cache-directory))
-           (base-path (engine-base-path engine)))
+           (frecency-path   (merge-pathnames "frecency" cache-directory))
+           (history-path    (merge-pathnames "history" cache-directory))
+           (base-path       (engine-base-path engine)))
       (ensure-directories-exist cache-directory)
       (with-foreign-string (base-pointer (namestring base-path))
         (with-foreign-string (frecency-pointer (namestring frecency-path))
@@ -126,9 +126,9 @@
             (with-foreign-object (options '(:struct fff-create-options))
               (engine--initialize-create-options
                options
-               :base-path base-pointer
+               :base-path     base-pointer
                :frecency-path frecency-pointer
-               :history-path history-pointer)
+               :history-path  history-pointer)
               (setf (engine--handle engine)
                     (clifff--take-handle-result
                      (fff--create-instance-with options)
@@ -154,65 +154,69 @@
 
 (defun engine--file-item (item)
   "Copy one foreign fff file ITEM into a readable property list."
-  (list :path (or (clifff--foreign-string
-                   (fff--file-item-relative-path item))
-                  "<unknown>")
+  (list :path       (or (clifff--foreign-string
+                         (fff--file-item-relative-path item))
+                        "<unknown>")
         :git-status (or (clifff--foreign-string
                          (fff--file-item-git-status item))
                         "")
-        :size (fff--file-item-size item)
-        :frecency (fff--file-item-frecency item)
-        :binary-p (not (zerop (fff--file-item-binary-p item)))))
+        :size       (fff--file-item-size item)
+        :frecency   (fff--file-item-frecency item)
+        :binary-p   (not (zerop (fff--file-item-binary-p item)))))
 
 (defun engine--file-result (result page page-size)
   "Copy foreign file RESULT into readable Common Lisp data."
-  (let* ((count (fff--search-result-count result))
+  (let* ((count         (fff--search-result-count result))
          (total-matched (fff--search-result-total-matched result)))
-    (list :kind ':files
-          :items (loop for index below count
-                       collect (engine--file-item
-                                (fff--search-result-item result index)))
-          :count count
+    (list :kind          ':files
+          :items         (loop for index below count
+                               collect (engine--file-item
+                                        (fff--search-result-item result index)))
+          :count         count
           :total-matched total-matched
-          :total-files (fff--search-result-total-files result)
-          :page page
-          :page-size page-size
-          :next-page (and (< (* (1+ page) page-size) total-matched)
-                          (1+ page)))))
+          :total-files   (fff--search-result-total-files result)
+          :page          page
+          :page-size     page-size
+          :next-page     (and (< (* (1+ page) page-size) total-matched)
+                              (1+ page)))))
 
 (defun engine--context-lines (match direction)
   "Copy MATCH context lines in DIRECTION into a list of strings."
   (let ((count (ecase direction
-                 (:before (fff--grep-match-context-before-count match))
-                 (:after (fff--grep-match-context-after-count match)))))
+                 (:before
+                  (fff--grep-match-context-before-count match))
+                 (:after
+                  (fff--grep-match-context-after-count match)))))
     (loop for index below count
           collect
           (or (clifff--foreign-string
                (ecase direction
-                 (:before (fff--grep-match-context-before match index))
-                 (:after (fff--grep-match-context-after match index))))
+                 (:before
+                  (fff--grep-match-context-before match index))
+                 (:after
+                  (fff--grep-match-context-after match index))))
               ""))))
 
 (defun engine--grep-match (match)
   "Copy one foreign fff grep MATCH into a readable property list."
-  (list :path (or (clifff--foreign-string
-                   (fff--grep-match-relative-path match))
-                  "<unknown>")
-        :git-status (or (clifff--foreign-string
-                         (fff--grep-match-git-status match))
-                        "")
-        :line-content (or (clifff--foreign-string
-                           (fff--grep-match-line-content match))
-                          "")
-        :line-number (fff--grep-match-line-number match)
-        :column (fff--grep-match-column match)
+  (list :path           (or (clifff--foreign-string
+                             (fff--grep-match-relative-path match))
+                            "<unknown>")
+        :git-status     (or (clifff--foreign-string
+                             (fff--grep-match-git-status match))
+                            "")
+        :line-content   (or (clifff--foreign-string
+                             (fff--grep-match-line-content match))
+                            "")
+        :line-number    (fff--grep-match-line-number match)
+        :column         (fff--grep-match-column match)
         :context-before (engine--context-lines match ':before)
-        :context-after (engine--context-lines match ':after)
+        :context-after  (engine--context-lines match ':after)
         :fuzzy-score
         (and (not (zerop (fff--grep-match-has-fuzzy-score-p match)))
              (fff--grep-match-fuzzy-score match))
-        :definition-p (not (zerop (fff--grep-match-definition-p match)))
-        :binary-p (not (zerop (fff--grep-match-binary-p match)))))
+        :definition-p   (not (zerop (fff--grep-match-definition-p match)))
+        :binary-p       (not (zerop (fff--grep-match-binary-p match)))))
 
 (defun engine--probe-limit (maximum-matches-per-file)
   "Return the per-file match count asked of fff to detect files over MAXIMUM-MATCHES-PER-FILE."
@@ -224,27 +228,27 @@
 RESULT was searched for one match more than MAXIMUM-MATCHES-PER-FILE, so a file
 holding that extra match keeps only the limit and is listed in
 :TRUNCATED-PATHS."
-  (let ((per-file (make-hash-table :test 'equal))
-        (matches nil)
+  (let ((per-file        (make-hash-table :test 'equal))
+        (matches         nil)
         (truncated-paths nil))
     (dotimes (index (fff--grep-result-count result))
       (let* ((match (engine--grep-match (fff--grep-result-match result index)))
-             (path (getf match :path)))
+             (path  (getf match :path)))
         (if (< (gethash path per-file 0) maximum-matches-per-file)
             (progn
               (incf (gethash path per-file 0))
               (push match matches))
             (pushnew path truncated-paths :test #'string=))))
     (setf matches (nreverse matches))
-    (list :kind ':content
-          :matches matches
-          :count (length matches)
+    (list :kind                     ':content
+          :matches                  matches
+          :count                    (length matches)
           :maximum-matches-per-file maximum-matches-per-file
-          :truncated-paths (nreverse truncated-paths)
-          :searched (fff--grep-result-total-files-searched result)
-          :eligible (fff--grep-result-filtered-file-count result)
-          :total-files (fff--grep-result-total-files result)
-          :next-file-offset (fff--grep-result-next-file-offset result)
+          :truncated-paths          (nreverse truncated-paths)
+          :searched                 (fff--grep-result-total-files-searched result)
+          :eligible                 (fff--grep-result-filtered-file-count result)
+          :total-files              (fff--grep-result-total-files result)
+          :next-file-offset         (fff--grep-result-next-file-offset result)
           :regex-fallback-error
           (clifff--foreign-string
            (fff--grep-result-regex-fallback-error result)))))
@@ -284,7 +288,7 @@ holding that extra match keeps only the limit and is listed in
 (defun clifff--render-context-lines (stream match)
   "Render MATCH's context lines to STREAM."
   (let* ((line-number (getf match :line-number))
-         (before (getf match :context-before)))
+         (before      (getf match :context-before)))
     (loop for line in before
           for number from (- line-number (length before))
           do (format stream "  | ~D  ~A~%" number line))
@@ -313,7 +317,7 @@ holding that extra match keeps only the limit and is listed in
                                   0
                                   (getf match :binary-p)
                                   :definition-p (getf match :definition-p)
-                                  :fuzzy-score (getf match :fuzzy-score)))
+                                  :fuzzy-score  (getf match :fuzzy-score)))
       (clifff--render-context-lines stream match))
     (when (getf result :truncated-paths)
       (format stream "per-file limit of ~D matches reached in: ~{~A~^, ~}~%"
@@ -361,9 +365,12 @@ holding that extra match keeps only the limit and is listed in
 (defun engine--grep-mode (mode)
   "Return fff's numeric content-search mode for keyword MODE."
   (ecase mode
-    (:plain 0)
-    (:regex 1)
-    (:fuzzy 2)))
+    (:plain
+     0)
+    (:regex
+     1)
+    (:fuzzy
+     2)))
 
 (defun engine-search-content
     (engine query

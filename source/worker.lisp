@@ -7,10 +7,10 @@
 
 (defun worker--write-form (stream form)
   "Write one portable protocol FORM to STREAM and flush it."
-  (let ((*print-circle* nil)
-        (*print-length* nil)
-        (*print-level* nil)
-        (*print-pretty* nil)
+  (let ((*print-circle*   nil)
+        (*print-length*   nil)
+        (*print-level*    nil)
+        (*print-pretty*   nil)
         (*print-readably* t))
     (write form :stream stream)
     (terpri stream)
@@ -20,7 +20,7 @@
 (defun worker--read-form (stream timeout-seconds)
   "Read one portable form from STREAM within TIMEOUT-SECONDS."
   (let ((*read-eval* nil)
-        (end-marker (gensym "CLIFFF-WORKER-END-")))
+        (end-marker  (gensym "CLIFFF-WORKER-END-")))
     (let ((form (with-timeout (timeout-seconds)
                   (read stream nil end-marker))))
       (when (eq form end-marker)
@@ -43,50 +43,50 @@
 
 (defclass worker ()
   ((command
-    :initarg :command
-    :reader worker--command
-    :type list
+    :initarg       :command
+    :reader        worker--command
+    :type          list
     :documentation "The argv list starting a process that calls WORKER-MAIN.")
    (log-pathname
-    :initarg :log-pathname
-    :initform nil
-    :accessor worker--log-pathname
-    :type (or null pathname)
+    :initarg       :log-pathname
+    :initform      nil
+    :accessor      worker--log-pathname
+    :type          (or null pathname)
     :documentation "The private file receiving helper diagnostics, or NIL before configuration.")
    (start-timeout-seconds
-    :initarg :start-timeout-seconds
-    :reader worker--start-timeout-seconds
-    :type (integer 1)
+    :initarg       :start-timeout-seconds
+    :reader        worker--start-timeout-seconds
+    :type          (integer 1)
     :documentation "The maximum helper startup duration.")
    (request-timeout-seconds
-    :initarg :request-timeout-seconds
-    :reader worker--request-timeout-seconds
-    :type (integer 1)
+    :initarg       :request-timeout-seconds
+    :reader        worker--request-timeout-seconds
+    :type          (integer 1)
     :documentation "The maximum duration of one complete request.")
    (process
-    :initform nil
-    :accessor worker-process
-    :type t
+    :initform      nil
+    :accessor      worker-process
+    :type          t
     :documentation "The live helper process, or NIL.")
    (input
-    :initform nil
-    :accessor worker--input
-    :type t
+    :initform      nil
+    :accessor      worker--input
+    :type          t
     :documentation "The request stream connected to the helper.")
    (output
-    :initform nil
-    :accessor worker--output
-    :type t
+    :initform      nil
+    :accessor      worker--output
+    :type          t
     :documentation "The response stream connected to the helper.")
    (next-request-id
-    :initform 1
-    :accessor worker--next-request-id
-    :type (integer 1)
+    :initform      1
+    :accessor      worker--next-request-id
+    :type          (integer 1)
     :documentation "The next request identifier sent to the helper.")
    (lock
-    :initform (make-lock "clifff worker")
-    :reader worker--lock
-    :type t
+    :initform      (make-lock "clifff worker")
+    :reader        worker--lock
+    :type          t
     :documentation "Serialize helper lifecycle and request exchange."))
   (:documentation "A restartable process containing a native fff index."))
 
@@ -106,9 +106,9 @@
   (unless (typep request-timeout-seconds '(integer 1))
     (clifff--fail ':worker "REQUEST-TIMEOUT-SECONDS must be positive."))
   (make-instance 'worker
-                 :command command
-                 :log-pathname log-pathname
-                 :start-timeout-seconds start-timeout-seconds
+                 :command                 command
+                 :log-pathname            log-pathname
+                 :start-timeout-seconds   start-timeout-seconds
                  :request-timeout-seconds request-timeout-seconds))
 
 (defun worker--alive-p (worker)
@@ -134,7 +134,7 @@
 (defun worker--close-unlocked (worker)
   "Stop and forget WORKER while its lifecycle lock is held."
   (let ((process (worker-process worker))
-        (input (worker--input worker)))
+        (input   (worker--input worker)))
     (when (and process (uiop:process-alive-p process))
       (when (and input (open-stream-p input))
         (ignore-errors
@@ -168,19 +168,19 @@
                     "The worker needs a diagnostic LOG-PATHNAME before startup."))
     (ensure-directories-exist log-pathname)
     (with-open-file (stream log-pathname
-                            :direction :output
-                            :if-exists :append
+                            :direction         :output
+                            :if-exists         :append
                             :if-does-not-exist :create)
       (finish-output stream))
     (worker--close-unlocked worker)
     (let ((process
             (uiop:launch-program
              (worker--command worker)
-             :input :stream
-             :output :stream
-             :error-output log-pathname
+             :input                  :stream
+             :output                 :stream
+             :error-output           log-pathname
              :if-error-output-exists :append
-             :wait nil)))
+             :wait                   nil)))
       (setf (worker-process worker) process
             (worker--input worker) (uiop:process-info-input process)
             (worker--output worker) (uiop:process-info-output process)
@@ -200,7 +200,7 @@
            ':worker
            (format nil "Could not start the clifff helper: ~A" cause)
            :pathname (first (worker--command worker))
-           :cause cause)))))
+           :cause    cause)))))
   worker)
 
 (defun worker--ensure-unlocked (worker)
@@ -214,12 +214,12 @@
   "Return one complete helper request for OPERATION and ARGUMENTS."
   (list :clifff-request
         :version +worker-protocol-version+
-        :id request-id
-        :library-path (namestring library-path)
-        :base-path (namestring base-path)
+        :id              request-id
+        :library-path    (namestring library-path)
+        :base-path       (namestring base-path)
         :cache-directory (namestring cache-directory)
-        :operation operation
-        :arguments arguments))
+        :operation       operation
+        :arguments       arguments))
 
 (defun worker--exchange
     (worker library-path base-path cache-directory operation arguments)
@@ -275,10 +275,10 @@ deleting the lockfile first would strand it until system restart."
     (clifff--fail ':worker "OPERATION must be a keyword."))
   (unless (listp arguments)
     (clifff--fail ':worker "ARGUMENTS must be a list."))
-  (let ((library-path (truename library-path))
-        (base-path (uiop:ensure-directory-pathname (truename base-path)))
+  (let ((library-path    (truename library-path))
+        (base-path       (uiop:ensure-directory-pathname (truename base-path)))
         (cache-directory (uiop:ensure-directory-pathname cache-directory))
-        (log-pathname log-pathname))
+        (log-pathname    log-pathname))
     (with-lock-held ((worker--lock worker))
       (unless (equal log-pathname (worker--log-pathname worker))
         (worker--close-unlocked worker)
@@ -295,7 +295,7 @@ deleting the lockfile first would strand it until system restart."
                      (when remote-error
                        (clifff--fail operation remote-error
                                      :pathname base-path
-                                     :cause ':remote))
+                                     :cause    ':remote))
                      (return content))
                  (clifff-error (condition)
                    (error condition))
@@ -310,8 +310,7 @@ deleting the lockfile first would strand it until system restart."
                                 cause
                                 (worker--log-pathname worker))
                         :pathname base-path
-                        :cause cause))))))))
-
+                        :cause    cause))))))))
 
 (defun worker-file-count
     (worker glob &key library-path base-path cache-directory log-pathname)
@@ -321,12 +320,12 @@ The other arguments are those of WORKER-REQUEST. Hosts use the count to check
 that a path filter names existing files before searching under it."
   (parse-integer
    (worker-request worker
-                   :library-path library-path
-                   :base-path base-path
+                   :library-path    library-path
+                   :base-path       base-path
                    :cache-directory cache-directory
-                   :log-pathname log-pathname
-                   :operation ':file-count
-                   :arguments (list glob))))
+                   :log-pathname    log-pathname
+                   :operation       ':file-count
+                   :arguments       (list glob))))
 
 
 ;;;; -- Child-Side Dispatch --
@@ -353,8 +352,8 @@ that a path filter names existing files before searching under it."
 (defun worker--make-engine (request)
   "Construct an engine from one validated worker REQUEST."
   (make-engine
-   :library-path (pathname (getf (rest request) :library-path))
-   :base-path (pathname (getf (rest request) :base-path))
+   :library-path    (pathname (getf (rest request) :library-path))
+   :base-path       (pathname (getf (rest request) :base-path))
    :cache-directory (pathname (getf (rest request) :cache-directory))))
 
 (defun worker--dispatch (engine request)
@@ -388,8 +387,8 @@ that a path filter names existing files before searching under it."
 Native helpers run with masked floating-point traps as C and Rust expect."
   #+sbcl (sb-ext:disable-debugger)
   #+sbcl (sb-int:set-floating-point-modes :traps nil)
-  (let ((engine nil)
-        (signature nil)
+  (let ((engine      nil)
+        (signature   nil)
         (*read-eval* nil))
     (unwind-protect
          (progn
@@ -420,15 +419,15 @@ Native helpers run with masked floating-point traps as C and Rust expect."
                              protocol-output
                              (list :clifff-response
                                    :version +worker-protocol-version+
-                                   :id request-id
-                                   :status ':ok
+                                   :id      request-id
+                                   :status  ':ok
                                    :content (worker--dispatch engine request))))
                         (serious-condition (condition)
                           (worker--write-form
                            protocol-output
                            (list :clifff-response
                                  :version +worker-protocol-version+
-                                 :id request-id
+                                 :id     request-id
                                  :status ':error
                                  :content
                                  (worker--error-text condition))))))))

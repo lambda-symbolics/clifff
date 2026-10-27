@@ -4,10 +4,10 @@
   "Write CONTENT to PATHNAME for a native integration fixture."
   (ensure-directories-exist pathname)
   (with-open-file (stream pathname
-                          :direction :output
-                          :if-exists :supersede
+                          :direction         :output
+                          :if-exists         :supersede
                           :if-does-not-exist :create
-                          :external-format :utf-8)
+                          :external-format   :utf-8)
     (write-string content stream))
   nil)
 
@@ -22,46 +22,46 @@
    "the create options match version 2 of the x86-64 C ABI")
   (test-assert
    (signals clifff-error
-     (make-engine :library-path #P"/missing/libfff_c.so"
-                  :base-path #P"/missing/workspace/"
+     (make-engine :library-path    #P"/missing/libfff_c.so"
+                  :base-path       #P"/missing/workspace/"
                   :cache-directory #P"/tmp/clifff/"))
    "engine construction rejects a missing workspace")
   (let ((rendered
           (render-file-result
-           (list :kind ':files
-                 :items (list (list :path "src/example.lisp"
-                                    :git-status "clean"
-                                    :size 42
-                                    :frecency 0
-                                    :binary-p nil))
-                 :count 1
+           (list :kind          ':files
+                 :items         (list (list :path       "src/example.lisp"
+                                            :git-status "clean"
+                                            :size       42
+                                            :frecency   0
+                                            :binary-p   nil))
+                 :count         1
                  :total-matched 2
-                 :total-files 7
-                 :page 0
-                 :page-size 1
-                 :next-page 1))))
+                 :total-files   7
+                 :page          0
+                 :page-size     1
+                 :next-page     1))))
     (test-assert (and (search "src/example.lisp" rendered)
                       (search "next-page: 1" rendered))
                  "file results render paths and pagination"))
   (let ((rendered
           (render-content-result
-           (list :kind ':content
+           (list :kind                 ':content
                  :matches
-                 (list (list :path "src/example.lisp"
-                             :git-status "clean"
-                             :line-content "needle"
-                             :line-number 2
-                             :column 1
+                 (list (list :path           "src/example.lisp"
+                             :git-status     "clean"
+                             :line-content   "needle"
+                             :line-number    2
+                             :column         1
                              :context-before '("before")
-                             :context-after '("after")
-                             :fuzzy-score nil
-                             :definition-p t
-                             :binary-p nil))
-                 :count 1
-                 :searched 1
-                 :eligible 1
-                 :total-files 1
-                 :next-file-offset 0
+                             :context-after  '("after")
+                             :fuzzy-score    nil
+                             :definition-p   t
+                             :binary-p       nil))
+                 :count                1
+                 :searched             1
+                 :eligible             1
+                 :total-files          1
+                 :next-file-offset     0
                  :regex-fallback-error nil))))
     (test-assert
      (and (search "src/example.lisp:2:1" rendered)
@@ -82,7 +82,7 @@
               (list :kind ':content :matches nil :count 4 :searched 2 :eligible 2
                     :total-files 2 :next-file-offset 0 :regex-fallback-error nil
                     :maximum-matches-per-file 2
-                    :truncated-paths '("src/a.lisp" "src/b.lisp"))))
+                    :truncated-paths          '("src/a.lisp" "src/b.lisp"))))
      "files cut off by the per-file limit are named"))
   nil)
 
@@ -91,7 +91,7 @@
   (let* ((directory (uiop:ensure-directory-pathname
                      (merge-pathnames (format nil "clifff-library-~D/" (random most-positive-fixnum))
                                       (uiop:temporary-directory))))
-         (library (merge-pathnames (fff-library-file-name) directory)))
+         (library   (merge-pathnames (fff-library-file-name) directory)))
     (unwind-protect
          (progn
            (test-assert (signals clifff-error (fff-library-locate directory "abc"))
@@ -171,13 +171,13 @@
             (format nil "CLIFFF_REPEATED one~%CLIFFF_REPEATED two~%CLIFFF_REPEATED three~%"))
            (setf engine
                  (make-engine :library-path library
-                              :base-path root
+                              :base-path    root
                               :cache-directory
                               (merge-pathnames "cache/" root)))
            (let ((files (engine-search-files engine "example" :page-size 20)))
              (test-assert
               (find "src/example.lisp" (getf files :items)
-                    :key (lambda (item) (getf item :path))
+                    :key  (lambda (item) (getf item :path))
                     :test #'string=)
               "native file search returns relative paths"))
            (let ((content
@@ -208,7 +208,7 @@
                             (engine-search-multi-content
                              engine '("CLIFFF_REPEATED")
                              :maximum-matches-per-file limit))))
-             (let ((cut (funcall search 2))
+             (let ((cut   (funcall search 2))
                    (whole (funcall search 3)))
                (test-assert
                 (and (= (getf cut :count) 2)
@@ -228,7 +228,7 @@
       (when engine
         (engine-close engine))
       (uiop:delete-directory-tree root
-                                  :validate t
+                                  :validate          t
                                   :if-does-not-exist :ignore)))
   nil)
 

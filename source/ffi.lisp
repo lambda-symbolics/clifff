@@ -4,26 +4,26 @@
 
 (define-condition clifff-error (error)
   ((message
-    :initarg :message
-    :reader clifff-error-message
-    :type string
+    :initarg       :message
+    :reader        clifff-error-message
+    :type          string
     :documentation "The human-readable description of the failure.")
    (operation
-    :initarg :operation
-    :reader clifff-error-operation
-    :type keyword
+    :initarg       :operation
+    :reader        clifff-error-operation
+    :type          keyword
     :documentation "The fff operation that failed.")
    (pathname
-    :initarg :pathname
-    :initform nil
-    :reader clifff-error-pathname
-    :type (or null pathname)
+    :initarg       :pathname
+    :initform      nil
+    :reader        clifff-error-pathname
+    :type          (or null pathname)
     :documentation "The related library or workspace pathname, when known.")
    (cause
-    :initarg :cause
-    :initform nil
-    :reader clifff-error-cause
-    :type t
+    :initarg       :cause
+    :initform      nil
+    :reader        clifff-error-cause
+    :type          t
     :documentation "The underlying condition or remote failure, when known."))
   (:report
    (lambda (condition stream)
@@ -35,10 +35,10 @@
 (defun clifff--fail (operation message &key pathname cause)
   "Signal a structured CLIFFF-ERROR for OPERATION."
   (error 'clifff-error
-         :message message
+         :message   message
          :operation operation
-         :pathname pathname
-         :cause cause))
+         :pathname  pathname
+         :cause     cause))
 
 
 ;;;; -- fff C ABI --
@@ -284,7 +284,7 @@
               ':load
               (format nil "Could not load the fff C library: ~A" cause)
               :pathname pathname
-              :cause cause))))))))
+              :cause    cause))))))))
 
 (defun clifff--foreign-string (pointer)
   "Copy POINTER's UTF-8 C string, returning NIL for a null pointer."
@@ -296,8 +296,8 @@
   (when (or (null result) (null-pointer-p result))
     (clifff--fail operation "fff returned a null result." :pathname pathname))
   (let ((success-p nil)
-        (message nil)
-        (handle nil))
+        (message   nil)
+        (handle    nil))
     (unwind-protect
          (setf success-p
                (not (zerop (foreign-slot-value result
@@ -324,8 +324,8 @@
   (when (or (null result) (null-pointer-p result))
     (clifff--fail operation "fff returned a null result." :pathname pathname))
   (let ((success-p nil)
-        (message nil)
-        (value 0))
+        (message   nil)
+        (value     0))
     (unwind-protect
          (setf success-p
                (not (zerop (foreign-slot-value result
