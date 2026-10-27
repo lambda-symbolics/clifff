@@ -146,7 +146,9 @@ The parent restarts the helper and retries once after this condition."))
   "Close inherited streams and forget WORKER without signaling its process."
   (dolist (stream (list (worker--input worker) (worker--output worker)))
     (when (and stream (open-stream-p stream))
-      (ignore-errors (close stream))))
+      (handler-case (close stream)
+        (stream-error ()
+          nil))))
   (setf (worker-process worker) nil
         (worker--input worker) nil
         (worker--output worker) nil
@@ -159,16 +161,20 @@ The parent restarts the helper and retries once after this condition."))
         (input   (worker--input worker)))
     (when (and process (uiop:process-alive-p process))
       (when (and input (open-stream-p input))
-        (ignore-errors
-          (worker--write-form
-           input
-           (list :clifff-shutdown :version *worker-protocol-version*))))
+        (handler-case
+            (worker--write-form
+             input
+             (list :clifff-shutdown :version *worker-protocol-version*))
+          (stream-error ()
+            nil)))
       (loop repeat 20
             while (uiop:process-alive-p process)
             do (sleep 0.01))
       (when (uiop:process-alive-p process)
+        ; mallet:suppress no-ignore-errors -- best-effort stop of a helper that may already be gone
         (ignore-errors (uiop:terminate-process process :urgent t))))
     (when process
+      ; mallet:suppress no-ignore-errors -- best-effort reap of a helper that may already be gone
       (ignore-errors (uiop:wait-process process))))
   (worker--detach-unlocked worker))
 
@@ -469,5 +475,6 @@ Native helpers run with masked floating-point traps as C and Rust expect."
                                  :content
                                  (worker--error-text condition))))))))
       (when engine
+        ; mallet:suppress no-ignore-errors -- the helper exits next, so a failed close changes nothing
         (ignore-errors (engine-close engine)))))
   nil)
