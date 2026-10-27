@@ -5,6 +5,27 @@
 (defparameter *worker-protocol-version* 1
   "The private protocol shared by clifff worker processes.")
 
+(define-condition worker-protocol-error (error)
+  ((message
+    :initarg       :message
+    :reader        worker-protocol-error-message
+    :type          string
+    :documentation "What went wrong in the exchange with the helper.")
+   (form
+    :initarg       :form
+    :initform      nil
+    :reader        worker-protocol-error-form
+    :type          t
+    :documentation "The form the helper sent, or NIL when it sent none."))
+  (:report
+   (lambda (condition stream)
+     (format stream "~A~@[: ~S~]"
+             (worker-protocol-error-message condition)
+             (worker-protocol-error-form condition))))
+  (:documentation "The helper closed its stream or sent a form outside the protocol.
+
+The parent restarts the helper and retries once after this condition."))
+
 (defun worker--write-form (stream form)
   "Write one portable protocol FORM to STREAM and flush it."
   (let ((*print-circle*   nil)
@@ -24,7 +45,8 @@
     (let ((form (with-timeout (timeout-seconds)
                   (read stream nil end-marker))))
       (when (eq form end-marker)
-        (error "The clifff helper closed its response stream."))
+        (error 'worker-protocol-error
+               :message "The clifff helper closed its response stream."))
       form)))
 
 (defun worker--response-p (value request-id)
@@ -193,7 +215,9 @@
             (unless (equal handshake
                            (list :clifff-worker
                                  :version *worker-protocol-version*))
-              (error "Invalid clifff helper handshake: ~S" handshake)))
+              (error 'worker-protocol-error
+                     :message "Invalid clifff helper handshake"
+                     :form    handshake)))
         (error (cause)
           (worker--close-unlocked worker)
           (clifff--fail
@@ -240,7 +264,9 @@
              (worker--output worker)
              (worker--request-timeout-seconds worker))))
       (unless (worker--response-p response request-id)
-        (error "Invalid clifff helper response: ~S" response))
+        (error 'worker-protocol-error
+               :message "Invalid clifff helper response"
+               :form    response))
       (if (eq (getf (rest response) :status) ':ok)
           (values (getf (rest response) :content) nil)
           (values nil (getf (rest response) :content))))))
