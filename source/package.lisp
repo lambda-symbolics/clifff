@@ -1,4 +1,5 @@
 (defpackage #:clifff
+  (:documentation "Bindings for the fff C library and a supervised worker process for it.")
   (:use #:cl)
   (:import-from #:bordeaux-threads
                 #:make-lock
@@ -48,6 +49,7 @@
            #:make-worker))
 
 (defpackage #:clifff/tests
+  (:documentation "Tests for clifff.")
   (:use #:cl)
   (:import-from #:clifff
                 #:*create-options-version*
