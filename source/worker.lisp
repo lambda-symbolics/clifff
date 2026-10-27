@@ -210,7 +210,7 @@
   worker)
 
 (defun worker--request-form
-    (request-id library-path base-path cache-directory operation arguments)
+    (request-id &key library-path base-path cache-directory operation arguments)
   "Return one complete helper request for OPERATION and ARGUMENTS."
   (list :clifff-request
         :version *worker-protocol-version*
@@ -222,15 +222,19 @@
         :arguments       arguments))
 
 (defun worker--exchange
-    (worker library-path base-path cache-directory operation arguments)
+    (worker &key library-path base-path cache-directory operation arguments)
   "Exchange one request, returning content and an optional remote error."
   (worker--ensure-unlocked worker)
   (let ((request-id (worker--next-request-id worker)))
     (incf (worker--next-request-id worker))
     (worker--write-form
      (worker--input worker)
-     (worker--request-form request-id library-path base-path cache-directory
-                           operation arguments))
+     (worker--request-form request-id
+                           :library-path    library-path
+                           :base-path       base-path
+                           :cache-directory cache-directory
+                           :operation       operation
+                           :arguments       arguments))
     (let ((response
             (worker--read-form
              (worker--output worker)
@@ -290,8 +294,12 @@ deleting the lockfile first would strand it until system restart."
       (loop for attempt from 1 to 2
             do (handler-case
                    (multiple-value-bind (content remote-error)
-                       (worker--exchange worker library-path base-path
-                                         cache-directory operation arguments)
+                       (worker--exchange worker
+                                         :library-path    library-path
+                                         :base-path       base-path
+                                         :cache-directory cache-directory
+                                         :operation       operation
+                                         :arguments       arguments)
                      (when remote-error
                        (clifff--fail operation remote-error
                                      :pathname base-path
