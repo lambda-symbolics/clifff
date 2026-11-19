@@ -1,5 +1,5 @@
 (defpackage #:clifff
-  (:documentation "Bindings for the fff C library and a supervised worker process for it.")
+  (:documentation "Bindings for the fff C library and a supervised worker process for managing fff.")
   (:use #:cl)
   (:import-from #:bordeaux-threads
                 #:make-lock
