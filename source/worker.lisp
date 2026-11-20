@@ -410,6 +410,12 @@ that a path filter names existing files before searching under it."
       (:multi-content
        (render-content-result
         (apply #'engine-search-multi-content engine arguments)))
+      (:structured-content
+       (multiple-value-call #'structured--render
+         (apply #'engine-search-structured-content engine arguments)))
+      (:structured-multi-content
+       (multiple-value-call #'structured--render
+         (apply #'engine-search-structured-multi-content engine arguments)))
       (:file-count
        (princ-to-string
         (getf (engine-search-files engine (first arguments) :glob-p t :page-size 1)

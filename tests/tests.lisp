@@ -84,6 +84,10 @@
                     :maximum-matches-per-file 2
                     :truncated-paths          '("src/a.lisp" "src/b.lisp"))))
      "files cut off by the per-file limit are named"))
+  (test-assert
+   (and (string= (clifff::structured--location-glob "dir,one/") "**/dir\\,one/**")
+        (string= (clifff::structured--location-glob "a}b/file.lisp") "**/a\\}b/file.lisp"))
+   "literal location alternatives escape brace-glob punctuation")
   nil)
 
 (defun tests--library-location ()
@@ -169,6 +173,12 @@
            (tests--write-file
             (merge-pathnames "docs/repeated.org" root)
             (format nil "CLIFFF_REPEATED one~%CLIFFF_REPEATED two~%CLIFFF_REPEATED three~%"))
+           (tests--write-file (merge-pathnames "src/literal.lisp" root)
+                              (format nil "*CLIFFF-VAR*~%shared-token~%"))
+           (tests--write-file (merge-pathnames "docs/literal.org" root)
+                              (format nil "*CLIFFF-VAR*~%shared-token~%"))
+           (tests--write-file (merge-pathnames "other/excluded.txt" root)
+                              (format nil "*CLIFFF-VAR*~%shared-token~%"))
            (setf engine
                  (make-engine :library-path library
                               :base-path    root
@@ -200,6 +210,40 @@
                    (string= (getf (first (getf content :matches)) :path)
                             "src/example.lisp"))
               "native multi-search applies file constraints"))
+           (flet ((paths (result)
+                    (sort (mapcar (lambda (match) (getf match :path))
+                                  (getf result :matches)) #'string<)))
+             (test-assert
+              (equal (paths (clifff:engine-search-structured-content
+                             engine "*CLIFFF-VAR*" :constraints "src/ docs/ !other/"))
+                     '("docs/literal.org" "src/literal.lisp"))
+              "structured content preserves literal Lisp names and alternative directories")
+             (test-assert
+              (equal (paths (clifff:engine-search-structured-multi-content
+                             engine '("shared-token")
+                             :constraints "src/literal.lisp docs/literal.org !other/"))
+                     '("docs/literal.org" "src/literal.lisp"))
+              "structured multi-content selects alternative file paths")
+             (multiple-value-bind (result note)
+                 (clifff:engine-search-structured-content
+                  engine "shared-token" :constraints "missing.lisp src/")
+               (test-assert (and (= (getf result :count) 1) (search "missing.lisp" note))
+                            "a missing path is reported while other locations are searched"))
+             (test-assert
+              (signals clifff-error
+                (clifff:engine-search-structured-content engine "shared-token"
+                                                         :constraints "missing.lisp"))
+              "a missing sole path signals an error")
+             (dolist (operation '(:structured-content :structured-multi-content))
+               (let ((text (clifff::worker--dispatch
+                            engine (list :clifff-request :operation operation
+                                         :arguments
+                                         (list (if (eq operation :structured-content)
+                                                   "shared-token" '("shared-token"))
+                                               :constraints "missing.lisp src/")))))
+                 (test-assert (and (search "src/literal.lisp" text)
+                                   (search "Note:" text) (search "missing.lisp" text))
+                              "structured worker renders results and missing-path note"))))
            (dolist (search
                     (list (lambda (limit)
                             (engine-search-content engine "CLIFFF_REPEATED"
@@ -223,7 +267,7 @@
              (test-assert
               (and (string= (file-count "**/src/example.lisp") "1")
                    (string= (file-count "**/missing/example.lisp") "0")
-                   (string= (file-count "**/{src,docs}/*") "3"))
+                   (string= (file-count "**/{src,docs}/example.*") "2"))
               "the worker counts the indexed files a glob matches")))
       (when engine
         (engine-close engine))

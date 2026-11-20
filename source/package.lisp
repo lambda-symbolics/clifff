@@ -29,6 +29,8 @@
            #:engine-search-content
            #:engine-search-files
            #:engine-search-multi-content
+           #:engine-search-structured-content
+           #:engine-search-structured-multi-content
            #:make-engine
            #:*fff-library-manifest-version*
            #:fff-library-current-p

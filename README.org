@@ -36,6 +36,16 @@ compact terminal or model output.
  (clifff:engine-search-files *engine* "provider" :page-size 20))
 #+END_SRC
 
+Structured content searches separate query text from path constraints:
+=engine-search-structured-content= accepts a query and =:constraints=;
+=engine-search-structured-multi-content= accepts literal patterns and the same
+constraints. Both return a result and an optional missing-path note as two
+values. Their worker operations are =:structured-content= and
+=:structured-multi-content=; worker results include the note in rendered text.
+Multiple literal directories and files select alternatives, while exclusions
+continue to apply. A missing file is reported or, if no location remains,
+signals =clifff-error=.
+
 Always close an engine when it is no longer needed:
 
 #+BEGIN_SRC lisp
