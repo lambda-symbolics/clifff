@@ -110,6 +110,20 @@
                         "a library whose manifest records the commit is located")
            (test-assert (signals clifff-error (fff-library-locate directory "def"))
                         "a library built from another commit is refused")
+           (let ((static (merge-pathnames "libfff_c.a" directory))
+                 (source (merge-pathnames "replacement" directory)))
+             (test-assert (not (fff-library-current-p library "abc" :required-artifacts (list static)))
+                          "a current shared library does not satisfy a missing static artifact")
+             (tests--write-file source "archive")
+             (clifff:fff-library-publish source static)
+             (test-assert (and (fff-library-current-p library "abc" :required-artifacts (list static))
+                               (string= (uiop:read-file-string static) "archive"))
+                          "artifact publication satisfies the complete installed set")
+             (test-assert (signals error
+                            (clifff:fff-library-publish (merge-pathnames "missing" directory) static))
+                          "a missing publication source signals a failure")
+             (test-assert (string= (uiop:read-file-string static) "archive")
+                          "failed publication preserves the prior artifact"))
            (test-assert (equal (fff-library-locate directory "def" :override library)
                                (truename library))
                         "an override library is trusted without a manifest"))
@@ -179,11 +193,14 @@
                               (format nil "*CLIFFF-VAR*~%shared-token~%"))
            (tests--write-file (merge-pathnames "other/excluded.txt" root)
                               (format nil "*CLIFFF-VAR*~%shared-token~%"))
+           (tests--write-file (merge-pathnames "src/unicode.lisp" root) "žluťoučký")
            (setf engine
                  (make-engine :library-path library
                               :base-path    root
                               :cache-directory
                               (merge-pathnames "cache/" root)))
+           (test-assert (= (getf (engine-search-content engine "žluťoučký") :count) 1)
+                        "native query strings preserve UTF-8 text")
            (let ((files (engine-search-files engine "example" :page-size 20)))
              (test-assert
               (find "src/example.lisp" (getf files :items)
@@ -218,6 +235,22 @@
                              engine "*CLIFFF-VAR*" :constraints "src/ docs/ !other/"))
                      '("docs/literal.org" "src/literal.lisp"))
               "structured content preserves literal Lisp names and alternative directories")
+             (test-assert
+              (equal (paths (clifff:engine-search-structured-content
+                             engine "*CLIFFF-VAR* src/"))
+                     '("src/literal.lisp"))
+              "inline path filters preserve a literal Lisp name")
+             (dolist (case '(("src/ docs/ !docs/" ("src/literal.lisp"))
+                             ("*.lisp src/ docs/" ("src/literal.lisp"))))
+               (dolist (operation '(clifff:engine-search-structured-content
+                                    clifff:engine-search-structured-multi-content))
+                 (test-assert
+                  (equal (paths (funcall operation engine
+                                         (if (eq operation 'clifff:engine-search-structured-content)
+                                             "shared-token" '("shared-token"))
+                                         :constraints (first case)))
+                         (second case))
+                  "other filters narrow alternative locations in both content modes")))
              (test-assert
               (equal (paths (clifff:engine-search-structured-multi-content
                              engine '("shared-token")
@@ -282,8 +315,12 @@
   (tests--unit-tests)
   (tests--library-location)
   (tests--database-reset-tests)
+  (tests--input-validation)
+  (tests--provisional-handle)
+  (tests--ownership-framing)
   (let ((library (uiop:getenv "CLIFFF_LIBRARY")))
     (when (and library (plusp (length library)))
-      (tests--native-tests (pathname library))))
+      (tests--native-tests (pathname library))
+      (tests--worker-lifecycle (pathname library))))
   (format t "~&~:D clifff tests passed.~%" *test-count*)
   nil)

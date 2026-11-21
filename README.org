@@ -61,6 +61,19 @@ expected commit, signaling =CLIFFF-ERROR= otherwise; an =:override= library,
 such as one from a package manager, is trusted as given.
 =FFF-LIBRARY-FILE-NAME= is the platform's library file name.
 
+Bootstrap scripts can load =source/artifact.lisp= with only ASDF/UIOP available.
+The file contains the shared platform filename, manifest, current-artifact and
+atomic publication functions, without loading CFFI or a native library.
+=fff-library-current-p= accepts =:required-artifacts= for additional outputs,
+such as a static archive. Publish each output with =fff-library-publish= and
+write the commit manifest after all required outputs are available.
+
+Queries, globs and constraints cannot contain NUL characters. Invalid input
+signals =clifff-error= with operation =:arguments= before native initialization.
+=validate-literal-patterns= accepts a nonempty proper list or vector of nonempty
+single-line strings and returns a fresh list. It rejects NUL and line endings.
+Foreign strings use UTF-8.
+
 * Supervised worker
 
 =make-worker= accepts a command that loads =clifff= and calls =worker-main=.
@@ -69,8 +82,12 @@ before retrying. This process boundary protects the parent from accidental
 native failures. It is not a security sandbox.
 
 The request supplies its workspace, cache, fff library and diagnostic log
-paths. Changing the log destination restarts the helper so distinct application
-configurations do not share diagnostics accidentally.
+paths. A cache or workspace switch can reuse the helper. Before opening the
+new native index, the helper acknowledges its configuration to the parent.
+After transport failure, reset only that acknowledged cache and retain its
+=lock.mdb= files. Detect an already dead helper before changing the log path.
+A live log switch or native-library switch requires a replacement process.
+Query errors do not count as transport failure.
 
 =worker-file-count= asks the helper how many indexed files match a glob, so a
 host can check that a path filter names existing files before searching under

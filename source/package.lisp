@@ -39,6 +39,8 @@
            #:fff-library-manifest
            #:fff-library-manifest-pathname
            #:fff-library-write-manifest
+           #:fff-library-publish
+           #:validate-literal-patterns
            #:render-content-result
            #:render-file-result
            #:worker

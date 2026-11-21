@@ -111,6 +111,16 @@
   (setf (engine--handle engine) nil)
   nil)
 
+(defun engine--create-native-instance (options)
+  "Create the native instance with the floating-point environment Rust threads expect."
+  ;; Native threads inherit the creating thread's trap mask. Limit the change
+  ;; to the foreign constructor and restore the Lisp caller's modes on return.
+  #+sbcl
+  (sb-int:with-float-traps-masked (:invalid :divide-by-zero :overflow :underflow :inexact)
+    (fff--create-instance-with options))
+  #-sbcl
+  (fff--create-instance-with options))
+
 (defun engine--ensure-unlocked (engine)
   "Return ENGINE's initialized native handle while its lock is held."
   (clifff--load-library (engine--library-path engine))
@@ -118,35 +128,37 @@
     (let* ((cache-directory (engine--cache-directory engine))
            (frecency-path   (merge-pathnames "frecency" cache-directory))
            (history-path    (merge-pathnames "history" cache-directory))
-           (base-path       (engine-base-path engine)))
+           (base-path       (engine-base-path engine))
+           (provisional     nil))
       (ensure-directories-exist cache-directory)
-      (with-foreign-string (base-pointer (namestring base-path))
-        (with-foreign-string (frecency-pointer (namestring frecency-path))
-          (with-foreign-string (history-pointer (namestring history-path))
-            (with-foreign-object (options '(:struct fff-create-options))
-              (engine--initialize-create-options
-               options
-               :base-path     base-pointer
-               :frecency-path frecency-pointer
-               :history-path  history-pointer)
-              (setf (engine--handle engine)
-                    (clifff--take-handle-result
-                     (fff--create-instance-with options)
-                     ':initialize
-                     :pathname base-path))))))
-      (unless (plusp
-               (clifff--take-integer-result
-                (fff--wait-for-scan
-                 (engine--handle engine)
-                 (engine--scan-timeout-milliseconds engine))
+      (unwind-protect
+           (progn
+             (with-foreign-string (base-pointer (namestring base-path) :encoding :utf-8)
+               (with-foreign-string (frecency-pointer (namestring frecency-path) :encoding :utf-8)
+                 (with-foreign-string (history-pointer (namestring history-path) :encoding :utf-8)
+                   (with-foreign-object (options '(:struct fff-create-options))
+                     (engine--initialize-create-options
+                      options :base-path     base-pointer
+                              :frecency-path frecency-pointer
+                              :history-path  history-pointer)
+                     (setf provisional
+                           (clifff--take-handle-result
+                             (engine--create-native-instance options) ':initialize
+                            :pathname base-path))))))
+             (unless (plusp
+                      (clifff--take-integer-result
+                       (fff--wait-for-scan provisional
+                                            (engine--scan-timeout-milliseconds engine))
+                       ':scan :pathname base-path))
+               (clifff--fail
                 ':scan
+                (format nil "fff did not finish indexing within ~D milliseconds."
+                        (engine--scan-timeout-milliseconds engine))
                 :pathname base-path))
-        (engine--close-unlocked engine)
-        (clifff--fail
-         ':scan
-         (format nil "fff did not finish indexing within ~D milliseconds."
-                 (engine--scan-timeout-milliseconds engine))
-         :pathname base-path))))
+             (setf (engine--handle engine) provisional
+                   provisional nil))
+        (when provisional
+          (fff--destroy provisional)))))
   (engine--handle engine))
 
 
@@ -330,6 +342,36 @@ holding that extra match keeps only the limit and is listed in
 
 ;;;; -- Native Search Operations --
 
+(defun clifff--validate-c-string (value name)
+  "Return string VALUE after rejecting an embedded C-string terminator."
+  (unless (and (stringp value) (not (find #\Null value)))
+    (clifff--fail ':arguments
+                  (format nil "~A must be a string without embedded NUL characters." name)))
+  value)
+
+(defun validate-literal-patterns (patterns)
+  "Return a fresh list of nonempty, single-line literal PATTERNS.
+Accept a proper list or vector of strings. Reject circular or dotted lists,
+empty collections, embedded NUL, and either line-ending character."
+  (let ((length (typecase patterns
+                  (list
+                   (handler-case (list-length patterns)
+                     (type-error () nil)))
+                  (vector
+                   (length patterns)))))
+    (unless (and length (plusp length))
+      (clifff--fail ':arguments "PATTERNS must be a nonempty proper sequence of strings.")))
+  (map 'list
+       (lambda (pattern)
+         (clifff--validate-c-string pattern "PATTERN")
+         (unless (and (plusp (length pattern))
+                      (not (find #\Newline pattern))
+                      (not (find #\Return pattern)))
+           (clifff--fail ':arguments
+                         "PATTERNS must contain nonempty single-line literal strings."))
+         pattern)
+       patterns))
+
 (defun engine--bounded-unsigned (value name maximum &key (minimum 0))
   "Return VALUE after validating its unsigned foreign integer range."
   (unless (and (integerp value) (<= minimum value maximum))
@@ -342,13 +384,12 @@ holding that extra match keeps only the limit and is listed in
 (defun engine-search-files
     (engine query &key glob-p (page 0) (page-size 20))
   "Search ENGINE paths for QUERY and return one readable result page."
-  (unless (stringp query)
-    (clifff--fail ':arguments "QUERY must be a string."))
+  (clifff--validate-c-string query "QUERY")
   (engine--bounded-unsigned page "PAGE" #xffffffff)
   (engine--bounded-unsigned page-size "PAGE-SIZE" #xffffffff :minimum 1)
   (with-lock-held ((engine--lock engine))
     (let ((handle (engine--ensure-unlocked engine)))
-      (with-foreign-string (query-pointer query)
+      (with-foreign-string (query-pointer query :encoding :utf-8)
         (let* ((result
                  (if glob-p
                      (fff--glob handle query-pointer (null-pointer)
@@ -383,8 +424,7 @@ TIME-BUDGET-MILLISECONDS bounds every search, including one that finds nothing;
 the page's :NEXT-FILE-OFFSET then resumes at the first unsearched file. A file
 with more than MAXIMUM-MATCHES-PER-FILE matches keeps the first ones and is
 listed in the page's :TRUNCATED-PATHS."
-  (unless (stringp query)
-    (clifff--fail ':arguments "QUERY must be a string."))
+  (clifff--validate-c-string query "QUERY")
   (engine--bounded-unsigned file-offset "FILE-OFFSET" #xffffffff)
   (engine--bounded-unsigned maximum-results "MAXIMUM-RESULTS" #xffffffff
                             :minimum 1)
@@ -400,7 +440,7 @@ listed in the page's :TRUNCATED-PATHS."
                             :minimum 1)
   (with-lock-held ((engine--lock engine))
     (let ((handle (engine--ensure-unlocked engine)))
-      (with-foreign-string (query-pointer query)
+      (with-foreign-string (query-pointer query :encoding :utf-8)
         (let* ((result
                  (fff--live-grep handle
                                  query-pointer
@@ -435,18 +475,8 @@ listed in the page's :TRUNCATED-PATHS."
   "Search ENGINE for lines matching any literal PATTERNS under CONSTRAINTS.
 
 The time budget and per-file limit apply as in ENGINE-SEARCH-CONTENT."
-  (unless (and (listp patterns)
-               patterns
-               (every (lambda (pattern)
-                        (and (stringp pattern)
-                             (plusp (length pattern))
-                             (not (find #\Newline pattern))))
-                      patterns))
-    (clifff--fail
-     ':arguments
-     "PATTERNS must contain non-empty strings without newlines."))
-  (unless (stringp constraints)
-    (clifff--fail ':arguments "CONSTRAINTS must be a string."))
+  (setf patterns (validate-literal-patterns patterns))
+  (clifff--validate-c-string constraints "CONSTRAINTS")
   (engine--bounded-unsigned file-offset "FILE-OFFSET" #xffffffff)
   (engine--bounded-unsigned maximum-results "MAXIMUM-RESULTS" #xffffffff
                             :minimum 1)
@@ -463,8 +493,8 @@ The time budget and per-file limit apply as in ENGINE-SEARCH-CONTENT."
   (with-lock-held ((engine--lock engine))
     (let ((handle (engine--ensure-unlocked engine))
           (joined (format nil "~{~A~^~%~}" patterns)))
-      (with-foreign-string (patterns-pointer joined)
-        (with-foreign-string (constraints-pointer constraints)
+      (with-foreign-string (patterns-pointer joined :encoding :utf-8)
+        (with-foreign-string (constraints-pointer constraints :encoding :utf-8)
           (let* ((result
                    (fff--multi-grep handle
                                     patterns-pointer

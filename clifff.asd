@@ -10,9 +10,10 @@
                  :serial     t
                  :components ((:file "package")
                               (:file "ffi")
+                              (:file "artifact")
                               (:file "library")
                               (:file "engine")
-                             (:file "structured")
+                              (:file "structured")
                               (:file "worker"))))
   :in-order-to ((asdf:test-op (asdf:test-op #:clifff/tests))))
 
@@ -23,7 +24,8 @@
   :components  ((:module     "tests"
                  :serial     t
                  :components ((:file "package")
-                              (:file "tests"))))
+                              (:file "tests")
+                              (:file "lifecycle"))))
   :perform     (asdf:test-op (operation component)
                  (declare (ignore operation component))
                  (uiop:symbol-call '#:clifff/tests '#:run-tests)))

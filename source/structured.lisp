@@ -27,8 +27,8 @@
 
 (defun structured--file-p (token)
   "Return whether fff interprets TOKEN as a literal file filter."
-  (let* ((name (subseq token (1+ (or (position #\/ token :from-end t) -1))))
-         (dot (position #\. name :from-end t))
+  (let* ((name      (subseq token (1+ (or (position #\/ token :from-end t) -1))))
+         (dot       (position #\. name :from-end t))
          (extension (and dot (subseq name (1+ dot)))))
     (and (plusp (length token)) (char/= (char token 0) #\!)
          (char/= (char token (1- (length token))) #\/)
@@ -52,17 +52,16 @@
 
 (defun structured--constraints (engine constraints)
   "Return fff filters and a missing-path note for CONSTRAINTS on ENGINE."
-  (unless (stringp constraints)
-    (clifff--fail ':arguments "CONSTRAINTS must be a string."))
-  (let* ((tokens (structured--tokens constraints))
-         (missing (remove-if-not
-                   (lambda (token)
-                     (and (structured--file-p token)
-                          (zerop (getf (engine-search-files engine (format nil "**/~A" token)
-                                                           :glob-p t :page-size 1)
-                                       :total-matched))))
-                   tokens))
-         (kept (remove-if (lambda (token) (member token missing :test #'string=)) tokens))
+  (clifff--validate-c-string constraints "CONSTRAINTS")
+  (let* ((tokens    (structured--tokens constraints))
+         (missing   (remove-if-not
+                     (lambda (token)
+                       (and (structured--file-p token)
+                            (zerop (getf (engine-search-files engine (format nil "**/~A" token)
+                                                             :glob-p t :page-size 1)
+                                         :total-matched))))
+                     tokens))
+         (kept      (remove-if (lambda (token) (member token missing :test #'string=)) tokens))
          (locations (remove-if-not #'structured--location-p kept)))
     (when (and missing (null locations))
       (clifff--fail ':arguments
@@ -82,7 +81,7 @@
           with start = 0
           while (< start length)
           do (let* ((begin (or (position-if-not #'structured--blank-p query :start start) length))
-                    (end (or (position-if #'structured--blank-p query :start begin) length))
+                    (end   (or (position-if #'structured--blank-p query :start begin) length))
                     (token (subseq query begin end)))
                (write-string query stream :start start :end begin)
                (when (and (>= (length token) 3) (char= (char token 0) #\*)
@@ -95,7 +94,8 @@
 
 (defun engine-search-structured-content (engine query &rest options &key (constraints "") &allow-other-keys)
   "Search QUERY with separate CONSTRAINTS. Return the result and optional note."
-  (unless (stringp query) (clifff--fail ':arguments "QUERY must be a string."))
+  (clifff--validate-c-string query "QUERY")
+  (clifff--validate-c-string constraints "CONSTRAINTS")
   (multiple-value-bind (filters note) (structured--constraints engine constraints)
     (remf options :constraints)
     (values (apply #'engine-search-content engine
@@ -107,6 +107,8 @@
 
 (defun engine-search-structured-multi-content (engine patterns &rest options &key (constraints "") &allow-other-keys)
   "Search literal PATTERNS with separate CONSTRAINTS. Return result and note."
+  (setf patterns (validate-literal-patterns patterns))
+  (clifff--validate-c-string constraints "CONSTRAINTS")
   (multiple-value-bind (filters note) (structured--constraints engine constraints)
     (remf options :constraints)
     (values (apply #'engine-search-multi-content engine patterns :constraints filters options) note)))

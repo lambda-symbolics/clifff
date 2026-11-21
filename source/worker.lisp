@@ -105,6 +105,11 @@ The parent restarts the helper and retries once after this condition."))
     :accessor      worker--next-request-id
     :type          (integer 1)
     :documentation "The next request identifier sent to the helper.")
+   (owned-signature
+    :initform      nil
+    :accessor      worker--owned-signature
+    :type          list
+    :documentation "The last library, workspace and cache acknowledged by the helper.")
    (lock
     :initform      (make-lock "clifff worker")
     :reader        worker--lock
@@ -152,7 +157,8 @@ The parent restarts the helper and retries once after this condition."))
   (setf (worker-process worker) nil
         (worker--input worker) nil
         (worker--output worker) nil
-        (worker--next-request-id worker) 1)
+        (worker--next-request-id worker) 1
+        (worker--owned-signature worker) nil)
   nil)
 
 (defun worker--close-unlocked (worker)
@@ -251,31 +257,47 @@ The parent restarts the helper and retries once after this condition."))
         :operation       operation
         :arguments       arguments))
 
+(defun worker--recover-unlocked (worker)
+  "Stop WORKER and reset only the databases it acknowledged owning."
+  (let ((signature (worker--owned-signature worker)))
+    (worker--close-unlocked worker)
+    (when signature
+      (worker--reset-databases (pathname (third signature))))))
+
 (defun worker--exchange
     (worker &key library-path base-path cache-directory operation arguments)
   "Exchange one request, returning content and an optional remote error."
   (worker--ensure-unlocked worker)
-  (let ((request-id (worker--next-request-id worker)))
-    (incf (worker--next-request-id worker))
-    (worker--write-form
-     (worker--input worker)
-     (worker--request-form request-id
-                           :library-path    library-path
-                           :base-path       base-path
-                           :cache-directory cache-directory
-                           :operation       operation
-                           :arguments       arguments))
-    (let ((response
-            (worker--read-form
-             (worker--output worker)
-             (worker--request-timeout-seconds worker))))
-      (unless (worker--response-p response request-id)
-        (error 'worker-protocol-error
-               :message "Invalid clifff helper response"
-               :form    response))
-      (if (eq (getf (rest response) :status) ':ok)
-          (values (getf (rest response) :content) nil)
-          (values nil (getf (rest response) :content))))))
+  (with-timeout ((worker--request-timeout-seconds worker))
+    (let ((request-id (worker--next-request-id worker))
+          (signature  (mapcar #'namestring (list library-path base-path cache-directory))))
+      (incf (worker--next-request-id worker))
+      (worker--write-form
+       (worker--input worker)
+       (worker--request-form request-id :library-path   library-path
+                                       :base-path       base-path
+                                       :cache-directory cache-directory
+                                       :operation operation :arguments arguments))
+      (let ((response     (worker--read-form (worker--output worker)
+                                             (worker--request-timeout-seconds worker)))
+            (acknowledged nil))
+        (when (and (listp response) (eq (first response) ':clifff-owned))
+          (unless (and (eql (getf (rest response) :version) *worker-protocol-version*)
+                       (eql (getf (rest response) :id) request-id)
+                       (equal (getf (rest response) :signature) signature))
+            (error 'worker-protocol-error
+                   :message "Invalid clifff ownership acknowledgement" :form response))
+          (setf (worker--owned-signature worker) signature
+                acknowledged t
+                response (worker--read-form (worker--output worker)
+                                            (worker--request-timeout-seconds worker))))
+        (unless (and (worker--response-p response request-id)
+                     (or acknowledged (eq (getf (rest response) :status) ':error)))
+          (error 'worker-protocol-error
+                 :message "Invalid or unacknowledged clifff helper response" :form response))
+        (if (eq (getf (rest response) :status) ':ok)
+            (values (getf (rest response) :content) nil)
+            (values nil (getf (rest response) :content)))))))
 
 (defun worker--reset-databases (cache-directory)
   "Discard rebuildable databases while preserving native lockfile identity.
@@ -316,13 +338,15 @@ deleting the lockfile first would strand it until system restart."
         (cache-directory (uiop:ensure-directory-pathname cache-directory))
         (log-pathname    log-pathname))
     (with-lock-held ((worker--lock worker))
-      (unless (equal log-pathname (worker--log-pathname worker))
-        (worker--close-unlocked worker)
-        (setf (worker--log-pathname worker) log-pathname))
-      (when (and (worker-process worker)
-                 (not (worker--alive-p worker)))
-        (worker--close-unlocked worker)
-        (worker--reset-databases cache-directory))
+      ;; Recover the old owner before a log switch can discard its process state.
+      (when (and (worker-process worker) (not (worker--alive-p worker)))
+        (worker--recover-unlocked worker))
+      (when (or (not (equal log-pathname (worker--log-pathname worker)))
+                (and (worker--owned-signature worker)
+                     (not (equal (namestring library-path)
+                                 (first (worker--owned-signature worker))))))
+        (worker--close-unlocked worker))
+      (setf (worker--log-pathname worker) log-pathname)
       (loop for attempt from 1 to 2
             do (handler-case
                    (multiple-value-bind (content remote-error)
@@ -340,9 +364,8 @@ deleting the lockfile first would strand it until system restart."
                  (clifff-error (condition)
                    (error condition))
                  (error (cause)
-                   (worker--close-unlocked worker)
-                   (if (= attempt 1)
-                       (worker--reset-databases cache-directory)
+                    (worker--recover-unlocked worker)
+                    (unless (= attempt 1)
                        (clifff--fail
                         operation
                         (format nil
@@ -464,6 +487,10 @@ Native helpers run with masked floating-point traps as C and Rust expect."
                                   (engine-close engine))
                                 (setf engine (worker--make-engine request)
                                       signature new-signature)))
+                            (worker--write-form
+                             protocol-output
+                             (list :clifff-owned :version *worker-protocol-version*
+                                   :id request-id :signature signature))
                             (worker--write-form
                              protocol-output
                              (list :clifff-response
