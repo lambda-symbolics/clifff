@@ -38,12 +38,11 @@ The parent restarts the helper and retries once after this condition."))
     (finish-output stream))
   nil)
 
-(defun worker--read-form (stream timeout-seconds)
-  "Read one portable form from STREAM within TIMEOUT-SECONDS."
+(defun worker--read-form (stream)
+  "Read one portable helper response, or signal a protocol error on EOF."
   (let ((*read-eval* nil)
         (end-marker  (gensym "CLIFFF-WORKER-END-")))
-    (let ((form (with-timeout (timeout-seconds)
-                  (read stream nil end-marker))))
+    (let ((form (read stream nil end-marker)))
       (when (eq form end-marker)
         (error 'worker-protocol-error
                :message "The clifff helper closed its response stream."))
@@ -75,16 +74,6 @@ The parent restarts the helper and retries once after this condition."))
     :accessor      worker--log-pathname
     :type          (or null pathname)
     :documentation "The private file receiving helper diagnostics, or NIL before configuration.")
-   (start-timeout-seconds
-    :initarg       :start-timeout-seconds
-    :reader        worker--start-timeout-seconds
-    :type          (integer 1)
-    :documentation "The maximum helper startup duration.")
-   (request-timeout-seconds
-    :initarg       :request-timeout-seconds
-    :reader        worker--request-timeout-seconds
-    :type          (integer 1)
-    :documentation "The maximum duration of one complete request.")
    (process
     :initform      nil
     :accessor      worker-process
@@ -117,10 +106,7 @@ The parent restarts the helper and retries once after this condition."))
     :documentation "Serialize helper lifecycle and request exchange."))
   (:documentation "A restartable process containing a native fff index."))
 
-(defun make-worker
-    (&key command log-pathname
-          (start-timeout-seconds 30)
-          (request-timeout-seconds 45))
+(defun make-worker (&key command log-pathname)
   "Create a lazy supervised fff worker started with COMMAND."
   (unless (and (listp command)
                command
@@ -128,15 +114,7 @@ The parent restarts the helper and retries once after this condition."))
     (clifff--fail ':worker "COMMAND must be a non-empty list of strings."))
   (unless (or (null log-pathname) (pathnamep log-pathname))
     (clifff--fail ':worker "LOG-PATHNAME must be NIL or a pathname."))
-  (unless (typep start-timeout-seconds '(integer 1))
-    (clifff--fail ':worker "START-TIMEOUT-SECONDS must be positive."))
-  (unless (typep request-timeout-seconds '(integer 1))
-    (clifff--fail ':worker "REQUEST-TIMEOUT-SECONDS must be positive."))
-  (make-instance 'worker
-                 :command                 command
-                 :log-pathname            log-pathname
-                 :start-timeout-seconds   start-timeout-seconds
-                 :request-timeout-seconds request-timeout-seconds))
+  (make-instance 'worker :command command :log-pathname log-pathname))
 
 (defun worker--alive-p (worker)
   "Return true when WORKER has a live process and open protocol streams."
@@ -220,10 +198,7 @@ The parent restarts the helper and retries once after this condition."))
             (worker--output worker) (uiop:process-info-output process)
             (worker--next-request-id worker) 1)
       (handler-case
-          (let ((handshake
-                  (worker--read-form
-                   (worker--output worker)
-                   (worker--start-timeout-seconds worker))))
+          (let ((handshake (worker--read-form (worker--output worker))))
             (unless (equal handshake
                            (list :clifff-worker
                                  :version *worker-protocol-version*))
@@ -268,36 +243,34 @@ The parent restarts the helper and retries once after this condition."))
     (worker &key library-path base-path cache-directory operation arguments)
   "Exchange one request, returning content and an optional remote error."
   (worker--ensure-unlocked worker)
-  (with-timeout ((worker--request-timeout-seconds worker))
-    (let ((request-id (worker--next-request-id worker))
-          (signature  (mapcar #'namestring (list library-path base-path cache-directory))))
-      (incf (worker--next-request-id worker))
-      (worker--write-form
-       (worker--input worker)
-       (worker--request-form request-id :library-path   library-path
-                                       :base-path       base-path
-                                       :cache-directory cache-directory
-                                       :operation operation :arguments arguments))
-      (let ((response     (worker--read-form (worker--output worker)
-                                             (worker--request-timeout-seconds worker)))
-            (acknowledged nil))
-        (when (and (listp response) (eq (first response) ':clifff-owned))
-          (unless (and (eql (getf (rest response) :version) *worker-protocol-version*)
-                       (eql (getf (rest response) :id) request-id)
-                       (equal (getf (rest response) :signature) signature))
-            (error 'worker-protocol-error
-                   :message "Invalid clifff ownership acknowledgement" :form response))
-          (setf (worker--owned-signature worker) signature
-                acknowledged t
-                response (worker--read-form (worker--output worker)
-                                            (worker--request-timeout-seconds worker))))
-        (unless (and (worker--response-p response request-id)
-                     (or acknowledged (eq (getf (rest response) :status) ':error)))
+  (let ((request-id (worker--next-request-id worker))
+        (signature  (mapcar #'namestring (list library-path base-path cache-directory))))
+    (incf (worker--next-request-id worker))
+    (worker--write-form
+     (worker--input worker)
+     (worker--request-form request-id :library-path    library-path
+                                      :base-path       base-path
+                                      :cache-directory cache-directory
+                                      :operation       operation
+                                      :arguments       arguments))
+    (let ((response     (worker--read-form (worker--output worker)))
+          (acknowledged nil))
+      (when (and (listp response) (eq (first response) ':clifff-owned))
+        (unless (and (eql (getf (rest response) :version) *worker-protocol-version*)
+                     (eql (getf (rest response) :id) request-id)
+                     (equal (getf (rest response) :signature) signature))
           (error 'worker-protocol-error
-                 :message "Invalid or unacknowledged clifff helper response" :form response))
-        (if (eq (getf (rest response) :status) ':ok)
-            (values (getf (rest response) :content) nil)
-            (values nil (getf (rest response) :content)))))))
+                 :message "Invalid clifff ownership acknowledgement" :form response))
+        (setf (worker--owned-signature worker) signature
+              acknowledged t
+              response (worker--read-form (worker--output worker))))
+      (unless (and (worker--response-p response request-id)
+                   (or acknowledged (eq (getf (rest response) :status) ':error)))
+        (error 'worker-protocol-error
+               :message "Invalid or unacknowledged clifff helper response" :form response))
+      (if (eq (getf (rest response) :status) ':ok)
+          (values (getf (rest response) :content) nil)
+          (values nil (getf (rest response) :content))))))
 
 (defun worker--reset-databases (cache-directory)
   "Discard rebuildable databases while preserving native lockfile identity.

@@ -3,7 +3,6 @@
   (:use #:cl)
   (:import-from #:bordeaux-threads
                 #:make-lock
-                #:with-timeout
                 #:with-lock-held)
   (:import-from #:cffi
                 #:defcstruct
