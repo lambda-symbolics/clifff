@@ -42,13 +42,14 @@
                    "embedded NUL is rejected before a missing library can be loaded"))))
 
 (defun tests--provisional-handle ()
-  "Exercise scan timeout, failed wait and successful native handle publication."
-  (dolist (outcome '(0 :failure 1))
+  "Publish completed scans and reclaim failed provisional handles."
+  (dolist (outcome '(:pending :failure 1))
     (let* ((root      (merge-pathnames (format nil "clifff-handle-~D/" (random most-positive-fixnum))
                                       (uiop:temporary-directory)))
            (engine    (make-engine :library-path #P"/missing/clifff-library"
                                    :base-path (uiop:temporary-directory) :cache-directory root))
            (handle    (cffi:make-pointer 123))
+           (attempts  0)
            (destroyed nil))
       (unwind-protect
            (tests--call-with-functions
@@ -59,18 +60,28 @@
                           (declare (ignore operation pathname)) result))
                   (cons 'clifff::fff--wait-for-scan
                         (lambda (pointer timeout)
-                          (declare (ignore pointer timeout))
-                          (if (eq outcome :failure) (error "Failed wait fixture") outcome)))
+                          (declare (ignore pointer))
+                          (test-assert (zerop timeout) "scan readiness uses a nonblocking poll")
+                          (incf attempts)
+                          (cond
+                            ((eq outcome :failure)
+                             (error "Failed wait fixture"))
+                            ((and (eq outcome :pending) (< attempts 3))
+                             0)
+                            (t
+                             1))))
                   (cons 'clifff::clifff--take-integer-result
                         (lambda (result operation &key pathname)
                           (declare (ignore operation pathname)) result))
                   (cons 'clifff::fff--destroy (lambda (pointer) (push pointer destroyed))))
             (lambda ()
-              (if (eql outcome 1)
+              (if (not (eq outcome :failure))
                   (progn
                     (test-assert (eq (clifff::engine--ensure-unlocked engine) handle)
                                  "a successful scan publishes the native handle")
                     (test-assert (null destroyed) "a published handle is not destroyed provisionally")
+                    (test-assert (= attempts (if (eq outcome :pending) 3 1))
+                                 "incomplete scans are polled until completion")
                     (engine-close engine))
                   (progn
                     (test-assert (signals error (clifff::engine--ensure-unlocked engine))
@@ -79,6 +90,76 @@
                                  "a failed scan does not publish its provisional handle")))
               (test-assert (equal destroyed (list handle)) "the native handle is destroyed exactly once")))
         (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore)))))
+
+(defun tests--search-without-deadline ()
+  "Exercise both content-search entry points without a native time budget."
+  (let* ((root   (uiop:temporary-directory))
+         (engine (make-engine :library-path #P"/missing/clifff-library"
+                              :base-path root :cache-directory root))
+         (calls  0))
+    (flet ((search-call (&rest arguments)
+             (incf calls)
+             (test-assert (zerop (nth 8 arguments)) "content search has no native time budget")
+             (test-assert (zerop (nth 9 arguments)) "native budget enforcement is disabled")
+             (cffi:make-pointer 123)))
+      (tests--call-with-functions
+       (list (cons 'clifff::engine--ensure-unlocked (lambda (value) (declare (ignore value)) nil))
+             (cons 'clifff::fff--live-grep #'search-call)
+             (cons 'clifff::fff--multi-grep #'search-call)
+             (cons 'clifff::clifff--take-handle-result
+                   (lambda (result operation &key pathname)
+                     (declare (ignore operation pathname)) result))
+             (cons 'clifff::engine--grep-result
+                   (lambda (result maximum) (declare (ignore result maximum)) '(:searched)))
+             (cons 'clifff::fff--free-grep-result (lambda (result) (declare (ignore result)))))
+       (lambda ()
+         (test-assert (equal '(:searched) (engine-search-content engine "needle"))
+                      "single-pattern search returns its decoded result")
+         (test-assert (equal '(:searched) (engine-search-multi-content engine '("needle" "other")))
+                      "multi-pattern search returns its decoded result")
+         (test-assert (= calls 2) "both native search entry points execute"))))))
+
+(defun tests--worker-shutdown ()
+  "Reap graceful shutdowns and abort failed transports without a cleanup deadline."
+  (dolist (mode '(:graceful :broken :abort))
+    (let* ((worker (clifff:make-worker :command '("unused")))
+           (input  (make-string-output-stream))
+           (events nil))
+      (setf (clifff:worker-process worker) :fixture
+            (clifff::worker--input worker) input)
+      (tests--call-with-functions
+       (list (cons 'uiop:process-alive-p (lambda (process) (declare (ignore process)) t))
+             (cons 'clifff::worker--write-form
+                   (lambda (stream form)
+                     (declare (ignore form))
+                     (push :shutdown events)
+                     (when (eq mode :broken)
+                       (error 'stream-error :stream stream))))
+             (cons 'uiop:terminate-process
+                   (lambda (process &key urgent)
+                     (declare (ignore process))
+                     (test-assert urgent "failed transports terminate immediately")
+                     (push :terminate events)))
+             (cons 'uiop:wait-process
+                   (lambda (process)
+                     (declare (ignore process))
+                     (push :reap events)
+                     0)))
+       (lambda ()
+         (if (eq mode :abort)
+             (clifff::worker--recover-unlocked worker)
+             (clifff:worker-close worker))
+         (test-assert
+          (equal (reverse events)
+                 (ecase mode
+                   (:graceful
+                    '(:shutdown :reap))
+                   (:broken
+                    '(:shutdown :terminate :reap))
+                   (:abort
+                    '(:terminate :reap))))
+          "graceful shutdown waits for exit and failed transports are terminated before reaping")
+         (test-assert (null (clifff:worker-process worker)) "shutdown detaches the reaped process"))))))
 
 (defun tests--ownership-framing ()
   "Distinguish helper death before and after a validated ownership acknowledgement."

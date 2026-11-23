@@ -317,6 +317,8 @@
   (tests--database-reset-tests)
   (tests--input-validation)
   (tests--provisional-handle)
+  (tests--search-without-deadline)
+  (tests--worker-shutdown)
   (tests--ownership-framing)
   (let ((library (uiop:getenv "CLIFFF_LIBRARY")))
     (when (and library (plusp (length library)))

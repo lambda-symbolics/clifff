@@ -23,11 +23,6 @@
     :reader        engine--cache-directory
     :type          pathname
     :documentation "The private directory containing fff databases.")
-   (scan-timeout-milliseconds
-    :initarg       :scan-timeout-milliseconds
-    :reader        engine--scan-timeout-milliseconds
-    :type          (integer 1)
-    :documentation "The initial indexing deadline in milliseconds.")
    (lock
     :initform      (make-lock "clifff engine")
     :reader        engine--lock
@@ -35,9 +30,7 @@
     :documentation "Serialize lifecycle and query calls."))
   (:documentation "One lazily initialized, watched fff workspace index."))
 
-(defun make-engine
-    (&key library-path base-path cache-directory
-          (scan-timeout-milliseconds 30000))
+(defun make-engine (&key library-path base-path cache-directory)
   "Create a lazy fff engine for BASE-PATH using private CACHE-DIRECTORY."
   (unless (pathnamep library-path)
     (clifff--fail ':create "LIBRARY-PATH must be a pathname."))
@@ -46,15 +39,10 @@
                   :pathname base-path))
   (unless (pathnamep cache-directory)
     (clifff--fail ':create "CACHE-DIRECTORY must be a pathname."))
-  (unless (typep scan-timeout-milliseconds '(integer 1))
-    (clifff--fail ':create "SCAN-TIMEOUT-MILLISECONDS must be positive."))
   (make-instance 'engine
-                 :library-path              library-path
-                 :base-path                 (uiop:ensure-directory-pathname
-                                             (truename base-path))
-                 :cache-directory           (uiop:ensure-directory-pathname
-                                             cache-directory)
-                 :scan-timeout-milliseconds scan-timeout-milliseconds))
+                 :library-path    library-path
+                 :base-path       (uiop:ensure-directory-pathname (truename base-path))
+                 :cache-directory (uiop:ensure-directory-pathname cache-directory)))
 
 (defun engine--initialize-create-options
     (options &key base-path frecency-path history-path)
@@ -145,16 +133,11 @@
                            (clifff--take-handle-result
                              (engine--create-native-instance options) ':initialize
                             :pathname base-path))))))
-             (unless (plusp
-                      (clifff--take-integer-result
-                       (fff--wait-for-scan provisional
-                                            (engine--scan-timeout-milliseconds engine))
-                       ':scan :pathname base-path))
-               (clifff--fail
-                ':scan
-                (format nil "fff did not finish indexing within ~D milliseconds."
-                        (engine--scan-timeout-milliseconds engine))
-                :pathname base-path))
+             ;; A zero native wait polls readiness without interrupting the scan.
+             (loop until (plusp (clifff--take-integer-result
+                                 (fff--wait-for-scan provisional 0)
+                                 ':scan :pathname base-path))
+                   do (sleep 0.01))
              (setf (engine--handle engine) provisional
                    provisional nil))
         (when provisional
@@ -416,23 +399,19 @@ empty collections, embedded NUL, and either line-ending character."
 (defun engine-search-content
     (engine query
      &key (mode ':plain) (file-offset 0) (maximum-results 20)
-       (maximum-matches-per-file 20) (time-budget-milliseconds 3000)
+       (maximum-matches-per-file 20)
        (context-lines 0) (maximum-file-size (* 10 1024 1024)))
   "Search ENGINE contents for QUERY and return one readable result page.
 
-TIME-BUDGET-MILLISECONDS bounds every search, including one that finds nothing;
-the page's :NEXT-FILE-OFFSET then resumes at the first unsearched file. A file
-with more than MAXIMUM-MATCHES-PER-FILE matches keeps the first ones and is
-listed in the page's :TRUNCATED-PATHS."
+The page's :NEXT-FILE-OFFSET resumes at the first unsearched file. A file with
+more than MAXIMUM-MATCHES-PER-FILE matches keeps the first ones and is listed
+in the page's :TRUNCATED-PATHS."
   (clifff--validate-c-string query "QUERY")
   (engine--bounded-unsigned file-offset "FILE-OFFSET" #xffffffff)
   (engine--bounded-unsigned maximum-results "MAXIMUM-RESULTS" #xffffffff
                             :minimum 1)
   (engine--bounded-unsigned maximum-matches-per-file
                             "MAXIMUM-MATCHES-PER-FILE" #xffffffff
-                            :minimum 1)
-  (engine--bounded-unsigned time-budget-milliseconds
-                            "TIME-BUDGET-MILLISECONDS" #xffffffffffffffff
                             :minimum 1)
   (engine--bounded-unsigned context-lines "CONTEXT-LINES" #xffffffff)
   (engine--bounded-unsigned maximum-file-size
@@ -455,8 +434,8 @@ listed in the page's :TRUNCATED-PATHS."
                                  1
                                  file-offset
                                  maximum-results
-                                 time-budget-milliseconds
-                                 1
+                                 0
+                                 0
                                  context-lines
                                  context-lines
                                  1))
@@ -470,11 +449,11 @@ listed in the page's :TRUNCATED-PATHS."
 (defun engine-search-multi-content
     (engine patterns
      &key (constraints "") (file-offset 0) (maximum-results 20)
-       (maximum-matches-per-file 20) (time-budget-milliseconds 3000)
+       (maximum-matches-per-file 20)
        (context-lines 0) (maximum-file-size (* 10 1024 1024)))
   "Search ENGINE for lines matching any literal PATTERNS under CONSTRAINTS.
 
-The time budget and per-file limit apply as in ENGINE-SEARCH-CONTENT."
+The per-file limit applies as in ENGINE-SEARCH-CONTENT."
   (setf patterns (validate-literal-patterns patterns))
   (clifff--validate-c-string constraints "CONSTRAINTS")
   (engine--bounded-unsigned file-offset "FILE-OFFSET" #xffffffff)
@@ -482,9 +461,6 @@ The time budget and per-file limit apply as in ENGINE-SEARCH-CONTENT."
                             :minimum 1)
   (engine--bounded-unsigned maximum-matches-per-file
                             "MAXIMUM-MATCHES-PER-FILE" #xffffffff
-                            :minimum 1)
-  (engine--bounded-unsigned time-budget-milliseconds
-                            "TIME-BUDGET-MILLISECONDS" #xffffffffffffffff
                             :minimum 1)
   (engine--bounded-unsigned context-lines "CONTEXT-LINES" #xffffffff)
   (engine--bounded-unsigned maximum-file-size
@@ -504,8 +480,8 @@ The time budget and per-file limit apply as in ENGINE-SEARCH-CONTENT."
                                     1
                                     file-offset
                                     maximum-results
-                                    time-budget-milliseconds
-                                    1
+                                    0
+                                    0
                                     context-lines
                                     context-lines
                                     1))

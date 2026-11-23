@@ -139,22 +139,22 @@ The parent restarts the helper and retries once after this condition."))
         (worker--owned-signature worker) nil)
   nil)
 
-(defun worker--close-unlocked (worker)
-  "Stop and forget WORKER while its lifecycle lock is held."
-  (let ((process (worker-process worker))
-        (input   (worker--input worker)))
+(defun worker--close-unlocked (worker &key abort-p)
+  "Close WORKER without a shutdown deadline, or abort a failed transport immediately."
+  (let ((process       (worker-process worker))
+        (input         (worker--input worker))
+        (shutdown-sent nil))
     (when (and process (uiop:process-alive-p process))
-      (when (and input (open-stream-p input))
-        (handler-case
-            (worker--write-form
-             input
-             (list :clifff-shutdown :version *worker-protocol-version*))
-          (stream-error ()
-            nil)))
-      (loop repeat 20
-            while (uiop:process-alive-p process)
-            do (sleep 0.01))
-      (when (uiop:process-alive-p process)
+      (when (and (not abort-p) input (open-stream-p input))
+        (setf shutdown-sent
+              (handler-case
+                  (progn
+                    (worker--write-form
+                     input (list :clifff-shutdown :version *worker-protocol-version*))
+                    t)
+                (stream-error ()
+                 nil))))
+      (unless shutdown-sent
         ; mallet:suppress no-ignore-errors -- best-effort stop of a helper that may already be gone
         (ignore-errors (uiop:terminate-process process :urgent t))))
     (when process
@@ -184,7 +184,7 @@ The parent restarts the helper and retries once after this condition."))
                             :if-exists         :append
                             :if-does-not-exist :create)
       (finish-output stream))
-    (worker--close-unlocked worker)
+    (worker--close-unlocked worker :abort-p t)
     (let ((process
             (uiop:launch-program
              (worker--command worker)
@@ -206,7 +206,7 @@ The parent restarts the helper and retries once after this condition."))
                      :message "Invalid clifff helper handshake"
                      :form    handshake)))
         (error (cause)
-          (worker--close-unlocked worker)
+          (worker--close-unlocked worker :abort-p t)
           (clifff--fail
            ':worker
            (format nil "Could not start the clifff helper: ~A" cause)
@@ -235,7 +235,7 @@ The parent restarts the helper and retries once after this condition."))
 (defun worker--recover-unlocked (worker)
   "Stop WORKER and reset only the databases it acknowledged owning."
   (let ((signature (worker--owned-signature worker)))
-    (worker--close-unlocked worker)
+    (worker--close-unlocked worker :abort-p t)
     (when signature
       (worker--reset-databases (pathname (third signature))))))
 
